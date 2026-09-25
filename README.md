@@ -52,6 +52,15 @@ what already exists, so re-running resumes an interrupted or failed run. Rate li
 retried; billing/credential/permission errors stop the run at once; a scene whose
 references failed is skipped rather than shot without them.
 
+## Influencers
+Switch to **Influencers** in the top bar. Design a fictional creator (look, persona, voice,
+the room they film in); AI fills whatever you leave empty. Paint their **identity pack**
+(face first, then three-quarter, profile, full body and the empty room, all raw and
+unretouched). In **Videos**, describe a topic: AI drafts a talking-head script in their
+voice, split into 10 s segments that you edit. **Shoot** makes one continuous selfie take:
+the first segment carries the identity pack, and each later one extends the same take
+with Gemini Omni (up to 40 s). Stored under `library/influencers/<id>/`.
+
 ## Costs
 Every generation call logs its token usage and an estimated `cost_usd` to `log.jsonl`
 (prices live in `Settings.PRICES`). The app shows spend per film, an estimate on every
@@ -64,6 +73,7 @@ button that spends money, and asks before anything over $1.
 
 ## Code
     pipeline.py   all generation logic (no UI)
+    influencers.py  influencer profiles, identity pack, scripts, extended reels
     server.py     local API + background jobs over pipeline.py; serves the UI
     web/          Next.js UI (exported to web/out, served by server.py)
     launch.py     builds the UI when needed, starts the server, opens the browser

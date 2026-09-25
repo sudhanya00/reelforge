@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { fetcher, type AppState, type Job, type LibraryCharacter, type Project, type ProjectSummary, type ProviderInfo, type Resolution, type Settings } from "./api";
+import { fetcher, type AppState, type Influencer, type InfluencerList, type Job, type LibraryCharacter, type Video, type Project, type ProjectSummary, type ProviderInfo, type Resolution, type Settings } from "./api";
 
 export function useAppState() {
   return useSWR<AppState>("/api/state", fetcher, { revalidateOnFocus: true });
@@ -36,6 +36,33 @@ export function useProject(id: string | null) {
   });
 }
 
+/** Jobs for an influencer run under the pseudo-project "inf:<id>". */
+export const infKey = (id: string) => `inf:${id}`;
+
+export function useInfluencers() {
+  const { running } = useJobs();
+  return useSWR<InfluencerList>("/api/influencers", fetcher, {
+    refreshInterval: running.some((j) => j.project?.startsWith("inf:")) ? 2500 : 0,
+  });
+}
+
+export function useInfluencer(id: string | null) {
+  const { running } = useJobs();
+  const busy = !!id && running.some((j) => j.project === infKey(id));
+  return useSWR<Influencer>(id ? `/api/influencers/${id}` : null, fetcher, {
+    refreshInterval: busy ? 1500 : 0,
+    keepPreviousData: true,
+  });
+}
+
+export function useVideo(id: string | null, vid: string | null) {
+  const { running } = useJobs();
+  const busy = !!id && !!vid && running.some((j) => j.project === infKey(id) && j.claims.includes(vid));
+  return useSWR<Video>(id && vid ? `/api/influencers/${id}/videos/${vid}` : null, fetcher, {
+    refreshInterval: busy ? 1500 : 0,
+  });
+}
+
 /** A clock that re-renders every `ms` while `on` is true. */
 export function useNow(on = true, ms = 1000) {
   const [now, setNow] = useState(() => Date.now() / 1000);
@@ -48,7 +75,10 @@ export function useNow(on = true, ms = 1000) {
 }
 
 /** Toast when jobs finish, and refresh the data they changed. Mounted once in the shell. */
-export function useJobWatcher(onOpen: (project: string, tab?: string) => void) {
+export function useJobWatcher(
+  onOpen: (project: string, tab?: string) => void,
+  onOpenInfluencer: (id: string, tab?: string, video?: string) => void,
+) {
   const { jobs } = useJobs();
   const { mutate } = useSWRConfig();
   const seen = useRef<Map<string, Job["status"]>>(new Map());
@@ -60,11 +90,24 @@ export function useJobWatcher(onOpen: (project: string, tab?: string) => void) {
       seen.current.set(j.id, j.status);
       if (first.current || before !== "running" || j.status === "running") continue;
 
+      if (j.project?.startsWith("inf:") || j.kind === "design") {
+        mutate((key) => typeof key === "string" && key.startsWith("/api/influencers"));
+        if (j.kind === "design") continue; // the designer shows its own result
+        const iid = j.project!.slice(4);
+        const tab = j.kind === "identity" ? "identity" : "videos";
+        const video = j.kind === "script" ? (j.result?.video as string | undefined) : j.kind === "reel" ? j.claims[0] : undefined;
+        if (j.status === "done") {
+          toast.success(doneMessage(j), { action: { label: "Open", onClick: () => onOpenInfluencer(iid, tab, video) } });
+        } else {
+          toast.error(j.label + " failed", { description: j.error ?? undefined, duration: 12000 });
+        }
+        continue;
+      }
       mutate("/api/projects");
       if (j.project) mutate(`/api/projects/${j.project}`);
       const project = j.project;
       if (j.status === "done") {
-        const tab = { assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan", direct: "plan" }[j.kind];
+        const tab = ({ assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan", direct: "plan" } as Partial<Record<Job["kind"], string>>)[j.kind];
         toast.success(doneMessage(j), {
           action: project ? { label: "Open", onClick: () => onOpen(project, tab) } : undefined,
         });
@@ -73,7 +116,7 @@ export function useJobWatcher(onOpen: (project: string, tab?: string) => void) {
       }
     }
     first.current = false;
-  }, [jobs, mutate, onOpen]);
+  }, [jobs, mutate, onOpen, onOpenInfluencer]);
 }
 
 function doneMessage(j: Job) {
@@ -87,6 +130,10 @@ function doneMessage(j: Job) {
     case "produce": return "Everything is made";
     case "review": return j.label.replace("Reviewing", "Review of") + " is ready";
     case "direct": return "The director has revised the plan";
+    case "design": return "Influencer designed";
+    case "identity": return j.label.replace("Painting", "Painted");
+    case "script": return "The script is ready to edit";
+    case "reel": return j.label.replace("Shooting", "Finished shooting");
   }
 }
 

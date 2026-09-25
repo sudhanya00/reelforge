@@ -6,13 +6,13 @@ import { ThemeProvider, useTheme } from "next-themes";
 import { SWRConfig } from "swr";
 import { Toaster } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
-import { Activity, Check, ChevronRight, Clapperboard, Moon, Settings2, Sun, TriangleAlert } from "lucide-react";
+import { Activity, Check, ChevronRight, Clapperboard, Film, Moon, Settings2, Sun, TriangleAlert, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge, LiveBars, Popover, PopoverContent, PopoverTrigger, Spinner, Tip, TooltipProvider } from "@/components/ui/primitives";
+import { Badge, LiveBars, Popover, PopoverContent, PopoverTrigger, Segmented, Spinner, Tip, TooltipProvider } from "@/components/ui/primitives";
 import { ConfirmSpendProvider } from "@/components/confirm";
 import { JobProgress } from "@/components/progress";
 import { SettingsDialog } from "@/components/settings";
-import { useAppState, useJobs, useJobWatcher, useNow, useProject } from "@/lib/hooks";
+import { useAppState, useInfluencer, useJobs, useJobWatcher, useNow, useProject } from "@/lib/hooks";
 import type { Job } from "@/lib/api";
 import { ago, clock, cn, usd } from "@/lib/utils";
 
@@ -21,22 +21,50 @@ import { ago, clock, cn, usd } from "@/lib/utils";
 export type Tab = "plan" | "references" | "scenes" | "final";
 export const TABS: Tab[] = ["plan", "references", "scenes", "final"];
 
+export type Mode = "films" | "influencers";
+export type InfTab = "identity" | "videos";
+
 export function useRoute() {
   const params = useSearchParams();
   const router = useRouter();
   const project = params.get("project");
+  const influencer = params.get("influencer");
+  const video = params.get("video");
   const tab = (TABS.includes(params.get("tab") as Tab) ? params.get("tab") : "plan") as Tab;
-  const go = React.useCallback(
-    (p: string | null, t?: string) => {
-      const q = new URLSearchParams();
-      if (p) q.set("project", p);
-      if (p && t) q.set("tab", t);
+  const infTab: InfTab = params.get("tab") === "videos" || video ? "videos" : "identity";
+  const mode: Mode = influencer || params.get("mode") === "influencers" ? "influencers" : "films";
+  const push = React.useCallback(
+    (q: URLSearchParams) => {
       router.push(q.size ? `/?${q}` : "/", { scroll: false });
       window.scrollTo({ top: 0 });
     },
     [router],
   );
-  return { project, tab, go };
+  const go = React.useCallback(
+    (p: string | null, t?: string) => {
+      const q = new URLSearchParams();
+      if (p) q.set("project", p);
+      if (p && t) q.set("tab", t);
+      push(q);
+    },
+    [push],
+  );
+  /** An influencer's page (null: the influencers home). */
+  const goInf = React.useCallback(
+    (id: string | null, t?: string, v?: string) => {
+      const q = new URLSearchParams();
+      if (!id) q.set("mode", "influencers");
+      else {
+        q.set("influencer", id);
+        if (t) q.set("tab", t);
+        if (v) q.set("video", v);
+      }
+      push(q);
+    },
+    [push],
+  );
+  const goMode = React.useCallback((m: Mode) => (m === "films" ? go(null) : goInf(null)), [go, goInf]);
+  return { project, tab, go, influencer, infTab, video, goInf, mode, goMode };
 }
 
 // ---------------------------------------------------------------- providers
@@ -59,10 +87,38 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 const TAB_LABEL: Record<Tab, string> = { plan: "Plan", references: "References", scenes: "Scenes", final: "Final cut" };
 
+function PillTabs<V extends string>({ value, options, onChange }: { value: V; options: { value: V; label: React.ReactNode; extra?: React.ReactNode }[]; onChange: (v: V) => void }) {
+  return (
+    <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center rounded-full bg-muted p-0.5 lg:flex">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "relative flex h-8 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors",
+            value === o.value ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {value === o.value && (
+            <motion.span
+              layoutId="tab-pill"
+              className="absolute inset-0 rounded-full bg-background shadow-sm dark:bg-accent"
+              transition={{ type: "spring", bounce: 0.15, duration: 0.45 }}
+            />
+          )}
+          <span className="relative flex items-center gap-1.5 [&_svg]:size-3.5">{o.label}</span>
+          {o.extra}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 export function Nav() {
-  const { project, tab, go } = useRoute();
+  const { project, tab, go, influencer, infTab, goInf, mode, goMode } = useRoute();
   const { data: p } = useProject(project);
-  useJobWatcher(go);
+  const { data: inf } = useInfluencer(influencer);
+  useJobWatcher(go, goInf);
 
   const counts: Partial<Record<Tab, [number, number]>> = p
     ? {
@@ -75,7 +131,7 @@ export function Nav() {
     <>
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/75 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-3 px-4">
-        <button onClick={() => go(null)} className="group flex items-center gap-2 rounded-full pr-2 outline-none">
+        <button onClick={() => goMode(mode)} className="group flex items-center gap-2 rounded-full pr-2 outline-none">
           <span className="flex size-7 items-center justify-center rounded-lg bg-foreground text-background transition-transform group-hover:-rotate-6">
             <Clapperboard className="size-4" />
           </span>
@@ -116,7 +172,59 @@ export function Nav() {
           </>
         )}
 
+        {!project && !influencer && (
+          <div className="md:absolute md:left-1/2 md:-translate-x-1/2">
+            <Segmented<Mode>
+              value={mode}
+              onChange={goMode}
+              options={[
+                { value: "films", label: <><Film />Films</> },
+                { value: "influencers", label: <><UserRound />Influencers</> },
+              ]}
+            />
+          </div>
+        )}
+
+        {influencer && inf && (
+          <>
+            <ChevronRight className="hidden size-4 shrink-0 text-muted-foreground/50 sm:block" />
+            <button onClick={() => goInf(null)} className="hidden text-sm text-muted-foreground hover:text-foreground sm:block">
+              Influencers
+            </button>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" />
+            <span className="min-w-0 max-w-[200px] truncate text-sm font-medium">{inf.profile.name}</span>
+            <PillTabs<InfTab>
+              value={infTab}
+              onChange={(t) => goInf(influencer, t)}
+              options={[
+                {
+                  value: "identity",
+                  label: "Identity",
+                  extra:
+                    inf.identity_done === inf.identity_total ? (
+                      <Check className="relative size-3.5 text-ok" />
+                    ) : (
+                      <span className="relative tabular text-xs text-muted-foreground">{inf.identity_done}/{inf.identity_total}</span>
+                    ),
+                },
+                {
+                  value: "videos",
+                  label: "Videos",
+                  extra: inf.videos_count ? <span className="relative tabular text-xs text-muted-foreground">{inf.videos_count}</span> : null,
+                },
+              ]}
+            />
+          </>
+        )}
+
         <div className="ml-auto flex items-center gap-1">
+          {influencer && inf && (
+            <Tip content="Spent on this influencer so far: identity pack, scripts and videos">
+              <span className="mr-1 hidden items-center rounded-full border px-2.5 py-1 text-xs font-medium tabular text-muted-foreground sm:flex">
+                {usd(inf.cost_usd)}
+              </span>
+            </Tip>
+          )}
           {p && (
             <Tip content={`Spent on this film so far · ${p.costs.calls} generation calls`}>
               <span className="mr-1 hidden items-center rounded-full border px-2.5 py-1 text-xs font-medium tabular text-muted-foreground sm:flex">
@@ -177,7 +285,11 @@ function SetupWarnings() {
 
 function JobsButton() {
   const { jobs, running } = useJobs();
-  const { go } = useRoute();
+  const { go, goInf } = useRoute();
+  const open = (j: Job) => {
+    if (j.project?.startsWith("inf:")) goInf(j.project.slice(4), j.kind === "identity" ? "identity" : "videos", j.kind === "reel" ? j.claims[0] : undefined);
+    else if (j.project) go(j.project, tabFor(j));
+  };
   return (
     <Popover>
       <Tip content={running.length ? `${running.length} running` : "Activity"}>
@@ -199,7 +311,7 @@ function JobsButton() {
         <div className="max-h-[60vh] overflow-y-auto p-2 scrollbar-thin">
           {jobs.length === 0 && <p className="px-2 py-6 text-center text-sm text-muted-foreground">Nothing has run yet.</p>}
           {jobs.map((j) => (
-            <JobRow key={j.id} job={j} onOpen={() => j.project && go(j.project, tabFor(j))} />
+            <JobRow key={j.id} job={j} onOpen={() => open(j)} />
           ))}
         </div>
       </PopoverContent>
@@ -208,7 +320,7 @@ function JobsButton() {
 }
 
 const tabFor = (j: Job) =>
-  ({ assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan", direct: "plan" })[j.kind];
+  ({ assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan", direct: "plan" } as Partial<Record<Job["kind"], string>>)[j.kind];
 
 function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
   const [open, setOpen] = React.useState(false);
@@ -229,7 +341,7 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{job.label}</span>
           <span className="block truncate text-xs text-muted-foreground">
-            {job.project ?? "new film"} · {job.status === "running" ? clock(elapsed) : `${clock(elapsed)} · ${ago(job.finished ?? job.started)}`}
+            {job.project?.startsWith("inf:") ? job.project.slice(4) : (job.project ?? (job.kind === "design" ? "new influencer" : "new film"))} · {job.status === "running" ? clock(elapsed) : `${clock(elapsed)} · ${ago(job.finished ?? job.started)}`}
           </span>
         </span>
         {job.project && (
