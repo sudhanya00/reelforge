@@ -36,7 +36,7 @@ with st.sidebar:
                                   key=f"im_{backend}"),
         video_model=st.text_input("Video model", pl.Settings.MODELS[backend]["video_model"],
                                   key=f"vm_{backend}"),
-        orientation=st.radio("Orientation", ["16:9", "9:16"], horizontal=True),
+        orientation=st.radio("Orientation (new films)", ["9:16", "16:9"], horizontal=True),
         resolution=st.selectbox("Video resolution", ["360p", "720p", "1080p", "4k"], index=1),
         image_size=st.selectbox("Image size", ["1K", "2K", "4K"], index=1),
     )

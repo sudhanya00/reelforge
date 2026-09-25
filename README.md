@@ -22,7 +22,8 @@ On Vertex, 1080p/4k (`delivery: uri`) needs a GCS bucket; 360p/720p return inlin
 
 ## Run
     streamlit run app.py             # step by step, with checkpoints
-    python cli.py --story "..." --style "..." --orientation 9:16
+    python cli.py --story "..." --style "..."            # 9:16, 720p by default
+    python cli.py --story "..." --resolution 360p         # cheap test run
 
 ## Project folder
     projects/<date>-<title>/

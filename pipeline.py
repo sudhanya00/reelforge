@@ -56,7 +56,7 @@ class Settings:
     planner_model: str = ""                              # "" = backend default
     image_model: str = ""
     video_model: str = ""
-    orientation: str = "16:9"                            # "16:9" | "9:16"
+    orientation: str = "9:16"                            # "9:16" | "16:9"
     resolution: str = "720p"                             # 360p | 720p | 1080p | 4k
     image_size: str = "2K"                               # 1K | 2K | 4K
     video_timeout_s: int = 900
@@ -389,15 +389,20 @@ def generate_image(client: genai.Client, s: Settings, prompt: str, out: Path,
 
 def asset_jobs(plan: dict) -> list[dict]:
     """All reference images to make, with their prompts. Base environments first."""
+    # sheets are wide (side-by-side views); plates match the film so Omni can frame from them
+    sheet, plate = "16:9", plan.get("orientation", "16:9")
     jobs = []
     for c in plan["characters"]:
-        jobs.append({"id": c["id"], "prompt": character_sheet_prompt(plan, c), "base": None})
+        jobs.append({"id": c["id"], "prompt": character_sheet_prompt(plan, c), "base": None,
+                     "aspect": sheet})
     for p in plan.get("props", []):
-        jobs.append({"id": p["id"], "prompt": prop_sheet_prompt(plan, p), "base": None})
+        jobs.append({"id": p["id"], "prompt": prop_sheet_prompt(plan, p), "base": None,
+                     "aspect": sheet})
     envs = plan["environments"]
     for e in sorted(envs, key=lambda e: bool(e.get("based_on"))):
         base = e.get("based_on") or None
-        jobs.append({"id": e["id"], "prompt": env_plate_prompt(plan, e, bool(base)), "base": base})
+        jobs.append({"id": e["id"], "prompt": env_plate_prompt(plan, e, bool(base)), "base": base,
+                     "aspect": plate})
     # user overrides stored in plan win
     overrides = plan.get("prompt_overrides", {})
     for j in jobs:
@@ -415,7 +420,7 @@ def generate_assets(client, s: Settings, proj: Project, only: list[str] | None =
         if skip_existing and out.exists() and not only:
             return job["id"], "skipped"
         refs = [proj.asset_path(job["base"])] if job["base"] else None
-        generate_image(client, s, job["prompt"], out, refs=refs)
+        generate_image(client, s, job["prompt"], out, refs=refs, aspect=job["aspect"])
         proj.log(kind="image", id=job["id"], model=s.image_model, prompt=job["prompt"],
                  refs=[job["base"]] if job["base"] else [])
         return job["id"], "done"
