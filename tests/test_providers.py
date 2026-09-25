@@ -217,12 +217,14 @@ def test_veo_fast_request_and_cost(proj, client, s, veo):
     call = veo.calls[0]
     cfg = call["config"]
     assert call["model"] == "veo-3.1-fast-generate-preview"      # the Gemini API id (tests use that backend)
-    assert (cfg.resolution, cfg.duration_seconds, cfg.aspect_ratio) == ("720p", 6, "16:9")   # 360p -> 720p, 5 s -> 6 s
+    # 360p -> 720p; with references Veo only makes 8 s clips, and the beats are stretched to fill them
+    assert (cfg.resolution, cfg.duration_seconds, cfg.aspect_ratio) == ("720p", 8, "16:9")
+    assert "4-8s:" in call["source"].prompt and "Duration 8 seconds" in call["source"].prompt
     assert len(cfg.reference_images) == 3 and cfg.reference_images[0].reference_type == types.VideoGenerationReferenceType.ASSET
     assert "CGI" in cfg.negative_prompt and "melting hands" in cfg.negative_prompt
     assert "looks exactly like the person in the reference image" in call["source"].prompt
     meta = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
-    assert meta["provider"] == "veo-fast" and meta["cost_usd"] == pytest.approx(0.60)
+    assert meta["provider"] == "veo-fast" and meta["cost_usd"] == pytest.approx(0.80)
 
 
 def test_veo_keeps_characters_first_when_refs_overflow(proj, client, s, veo):
@@ -274,3 +276,19 @@ def test_veo_continuous_scene_gets_the_first_frame(proj, client, s, veo):
     pl.generate_take(client, s, proj, "s02")
     assert veo.calls[0]["source"].image is not None
     assert veo.calls[0]["source"].prompt.startswith("The video starts exactly on the given first frame.")
+
+
+def test_veo_without_refs_keeps_the_planned_length(proj, client, s, veo):
+    on(proj, "veo-fast", "s02")                                    # no reference images painted
+    pl.generate_take(client, s, proj, "s02")
+    assert veo.calls[0]["config"].duration_seconds == 6 and veo.calls[0]["config"].reference_images is None
+
+
+def test_failed_veo_operation_maps_grpc_codes(proj, client, s, veo):
+    on(proj, "veo-fast", "s01")
+    from types import SimpleNamespace as NS
+    veo.operations.get = lambda op: NS(name=op.name, done=True, response=None, result=None,
+                                       error={"code": 3, "message": "Unsupported output video duration"})
+    with pytest.raises(providers.ProviderError) as ei:
+        pl.generate_take(client, s, proj, "s01")
+    assert ei.value.status_code == 400 and not pl._is_fatal(ei.value)

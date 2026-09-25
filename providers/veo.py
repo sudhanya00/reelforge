@@ -18,10 +18,13 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
-from prompts import scene_lines
+from prompts import fit_beats, scene_lines
 from .base import ProviderError, Shot, Submission, VideoCaps, VideoProvider, VideoResult
 
 CLIENT_FACTORY = None           # tests and demo mode swap in a fake client
+
+# a failed operation carries a gRPC status code; map it to the HTTP-like statuses we use
+_GRPC = {3: 400, 5: 404, 7: 403, 8: 429, 9: 400, 13: 500, 14: 503, 16: 401}
 
 # What we've measured going wrong (docs/RND.md), phrased as things not to show.
 NEGATIVE = ("morphing objects, warped or melting hands, extra fingers, garbled text, "
@@ -60,6 +63,12 @@ class VeoVideo(VideoProvider):
         """Veo only does 4, 6 or 8 s: the shortest that fits the beats (8 at most)."""
         return next((d for d in self.DURATIONS if d >= seconds), self.DURATIONS[-1])
 
+    # Veo returns "supported durations are [8] for feature reference_to_video" otherwise
+    REF_DURATION = 8
+
+    def shot_duration(self, shot: Shot) -> int:
+        return self.REF_DURATION if shot.refs else shot.duration_s
+
     def price_per_s(self, resolution: str, edit: bool = False) -> float:
         return self.s.PRICES.get(self.model, {}).get("per_s", {}).get(resolution, 0)
 
@@ -73,11 +82,14 @@ class VeoVideo(VideoProvider):
             else:
                 who.append(f"The setting matches the location reference image ({r.note}).")
         head = ["The video starts exactly on the given first frame."] if shot.first_frame else []
-        return "\n".join(head + ([" ".join(who)] if who else []) + scene_lines(shot.plan, shot.scene, shot.duration_s))
+        d = self.shot_duration(shot)
+        return "\n".join(head + ([" ".join(who)] if who else []) +
+                         scene_lines(shot.plan, fit_beats(shot.scene, d), d))
 
     def _config(self, shot: Shot, with_refs: bool) -> types.GenerateVideosConfig:
         avoid = shot.plan.get("style", {}).get("avoid", "")
-        kw = dict(aspect_ratio=shot.aspect, resolution=shot.resolution, duration_seconds=shot.duration_s,
+        d = self.shot_duration(shot) if with_refs else shot.duration_s
+        kw = dict(aspect_ratio=shot.aspect, resolution=shot.resolution, duration_seconds=d,
                   number_of_videos=1, generate_audio=True,
                   negative_prompt=", ".join(x for x in (avoid.strip().rstrip("."), NEGATIVE) if x))
         if with_refs and shot.refs:
@@ -98,8 +110,9 @@ class VeoVideo(VideoProvider):
                 raise
             dropped = str(e)[:300]
             op = client.models.generate_videos(model=self.model, source=source, config=self._config(shot, False))
+        seconds = self.shot_duration(shot) if dropped is None else shot.duration_s
         return Submission(ids={"operation": op.name},
-                          handle={"op": op, "client": client, "seconds": shot.duration_s,
+                          handle={"op": op, "client": client, "seconds": seconds,
                                   "resolution": shot.resolution, "refs_dropped": dropped})
 
     def collect(self, sub: Submission) -> VideoResult:
@@ -116,8 +129,8 @@ class VeoVideo(VideoProvider):
         if sub.handle["refs_dropped"]:
             meta["refs_dropped"] = sub.handle["refs_dropped"]
         if op.error:
-            raise ProviderError(int(op.error.get("code", 500)) if str(op.error.get("code", "")).isdigit() else 500,
-                                f"Veo: {op.error.get('message', op.error)}")
+            code = op.error.get("code")
+            raise ProviderError(_GRPC.get(code, 500), f"Veo: {op.error.get('message', op.error)}")
         res = op.response or op.result
         if res and getattr(res, "rai_media_filtered_count", 0):
             reasons = "; ".join(res.rai_media_filtered_reasons or []) or "no reason given"

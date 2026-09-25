@@ -69,6 +69,18 @@ def beat_line(b: dict) -> str:
     return f"{_t(b['t_start'])}-{_t(b['t_end'])}s: {dot(b['action'])}{hold} Camera: {dot(b['camera'])}"
 
 
+def fit_beats(scene: dict, duration_s: int) -> dict:
+    """A copy of the scene whose beat timings are stretched to fill a longer clip, so a model
+    that must render more seconds than planned (Veo with references: 8 s) doesn't pad the end."""
+    beats = scene.get("beats") or []
+    end = beats[-1]["t_end"] if beats else 0
+    if not beats or end <= 0 or duration_s <= end:
+        return scene
+    k = duration_s / end
+    return {**scene, "beats": [{**b, "t_start": round(b["t_start"] * k, 1), "t_end": round(b["t_end"] * k, 1)}
+                               for b in beats]}
+
+
 def scene_lines(plan: dict, scene: dict, duration_s: int | None = None) -> list[str]:
     """The provider-independent description of one shot (or, for multi-shot scenes, of the
     shots inside one clip). Planner v2 scenes are compiled from their timed beats."""
