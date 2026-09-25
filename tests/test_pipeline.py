@@ -3,6 +3,7 @@
 Run:  python -m pytest -q
 """
 import json
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -164,7 +165,7 @@ def fast(s):
 
 
 def test_image_retries_on_503_then_succeeds(proj, client, fast):
-    client.errors = [api_error(503)]
+    client.errors["image"] = [api_error(503)]
     pl.generate_assets(client, fast, proj, only=["char_a"])
     assert proj.asset_path("char_a").exists()
     retry = [e for e in log_entries(proj) if e["kind"] == "retry"]
@@ -172,24 +173,23 @@ def test_image_retries_on_503_then_succeeds(proj, client, fast):
 
 
 def test_video_retries_on_429_from_interactions(proj, client, fast):
-    client.errors = [interactions_error(429), interactions_error(429)]
+    client.errors["video"] = [interactions_error(429), interactions_error(429)]
     out = pl.generate_take(client, fast, proj, "s01")
     assert out.exists()
     assert len([e for e in log_entries(proj) if e["kind"] == "retry"]) == 2
 
 
 def test_client_errors_are_not_retried(proj, client, fast):
-    client.errors = [interactions_error(400, "bad request")]
+    client.errors["video"] = [interactions_error(400, "bad request")]
     with pytest.raises(Exception):
         pl.generate_take(client, fast, proj, "s01")
     assert len([c for c in client.calls if c[0] == "interactions.create"]) == 1
 
 
 def test_gives_up_after_max_retries(proj, client, fast):
-    client.errors = [api_error(503)] * (fast.max_retries + 1)
-    with pytest.raises(Exception) as ei:
-        pl.generate_assets(client, fast, proj, only=["char_a"])
-    assert "servers failed" in pl.friendly_error(ei.value)
+    client.errors["image"] = [api_error(503)] * (fast.max_retries + 1)
+    res = pl.generate_assets(client, fast, proj, only=["char_a"])
+    assert res["char_a"].startswith("failed:") and "servers failed" in res["char_a"]
 
 
 @pytest.mark.parametrize("err, expect", [
@@ -206,3 +206,110 @@ def test_friendly_error_messages(err, expect):
 def test_friendly_error_for_expired_credentials():
     import google.auth.exceptions as gae
     assert "application-default login" in pl.friendly_error(gae.RefreshError("expired"))
+
+
+# ---------------------------------------------------------------- produce / resume
+
+def creates(client):
+    return [c for c in client.calls if c[0] == "interactions.create"]
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_produce_makes_everything_then_resume_is_free(proj, client, s):
+    logs = []
+    r = pl.produce(client, s, proj, log=logs.append)
+    assert r["failed"] == {} and r["final"].exists()
+    assert all(proj.takes(sc) for sc in ("s01", "s02", "s03"))
+    assert any(l.startswith("To make: 4 references, 3 scenes") for l in logs)
+    n = len(client.calls)
+    r2 = pl.produce(client, s, proj, log=lambda m: None)
+    assert len(client.calls) == n, "a finished project must not spend anything on resume"
+    assert r2["final"].exists()
+
+
+def test_failed_reference_skips_only_scenes_that_need_it(proj, mp4_bytes, s):
+    c = FakeClient(mp4_bytes)
+    c.errors["image"] = [api_error(400, "blocked")]   # first image job (char_a) fails
+    r = pl.produce(c, s, proj, log=lambda m: None)
+    assert r["failed"]["char_a"].startswith("failed:")
+    assert r["failed"]["s01"].startswith("skipped: missing references char_a")
+    assert r["failed"]["s02"].startswith("skipped")
+    assert proj.takes("s03"), "s03 doesn't use char_a, so it is still shot"
+    assert r["final"] is None
+    # resume after the cause is fixed: only the missing work is done
+    before = len(creates(c))
+    r = pl.produce(c, s, proj, log=lambda m: None)
+    assert not r["failed"] and len(creates(c)) == before + 2
+
+
+def test_fatal_error_stops_the_run(proj, client, s):
+    client.errors["image"] = [api_error(402)] * 4   # every parallel image job hits billing
+    r = pl.produce(client, s, proj, log=lambda m: None)
+    assert any(v.startswith("fatal") for v in r["failed"].values())
+    assert not creates(client), "no video should be attempted after a fatal error"
+
+
+def test_fatal_error_during_scenes_stops_the_run(proj, client, s):
+    pl.generate_assets(client, s, proj)
+    client.errors["video"] = [interactions_error(403)]
+    r = pl.produce(client, s, proj, log=lambda m: None)
+    assert "Permission denied" in r["failed"]["s01"]
+    assert len(creates(client)) == 1
+
+
+def test_continuous_scene_waits_for_previous(proj, client, s, fast):
+    pl.generate_assets(client, s, proj)
+    client.errors["video"] = [interactions_error(400)]   # s01 fails (not fatal)
+    r = pl.produce(client, fast, proj, log=lambda m: None)
+    assert r["failed"]["s02"] == "skipped: continues from s01, which has no take"
+    assert proj.takes("s03")
+
+
+def test_estimate_remaining(proj, client, s):
+    e = pl.estimate_remaining(proj, s)
+    assert len(e["refs"]) == 4 and e["scenes"] == ["s01", "s02", "s03"] and e["video_s"] == 15
+    assert e["usd"] == pytest.approx(pl.estimate_image_usd(s, 4) + pl.estimate_video_usd(s, 15), abs=0.01)
+
+
+def test_project_open_rejects_non_projects(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        pl.Project.open(tmp_path / "nope")
+    assert not (tmp_path / "nope").exists()
+
+
+# ---------------------------------------------------------------- CLI
+
+def run_cli(monkeypatch, client, *args):
+    import runpy, sys
+    monkeypatch.setattr(pl, "make_client", lambda s, api_key=None: client)
+    monkeypatch.setattr(sys, "argv", ["cli.py", *args])
+    try:
+        runpy.run_path(str(Path(pl.__file__).with_name("cli.py")), run_name="__main__")
+    except SystemExit as e:
+        return e.code
+    return 0
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_cli_full_run_then_resume(tmp_path, monkeypatch, client, capsys):
+    code = run_cli(monkeypatch, client, "--story", "x", "--resolution", "360p", "--image-size", "1K",
+                   "--out", str(tmp_path), "--backend", "gemini")
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "Final cut:" in out and "Spent so far: $" in out
+    folder = next(tmp_path.iterdir())
+    code = run_cli(monkeypatch, client, "--resume", str(folder), "--backend", "gemini")
+    assert code == 0 and "To make: 0 references, 0 scenes" in capsys.readouterr().out
+
+
+def test_cli_reports_failures_with_resume_command(tmp_path, monkeypatch, client, capsys):
+    client.errors["image"] = [api_error(400, "blocked")]   # char_a -> s01, s02 skipped
+    code = run_cli(monkeypatch, client, "--story", "x", "--out", str(tmp_path), "--backend", "gemini")
+    assert code == 2
+    assert "--resume" in capsys.readouterr().out
+
+
+def test_cli_friendly_error_and_exit_1(tmp_path, monkeypatch, client, capsys):
+    client.errors["plan"] = [api_error(402)]
+    assert run_cli(monkeypatch, client, "--story", "x", "--out", str(tmp_path), "--backend", "gemini") == 1
+    assert "prepaid credits" in capsys.readouterr().err

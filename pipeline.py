@@ -206,6 +206,11 @@ def _with_retry(fn, s: "Settings", what: str, proj: "Project | None" = None):
             time.sleep(wait)
 
 
+def _is_fatal(e: Exception) -> bool:
+    """Errors that will hit every call (billing, auth, permissions, unknown model): stop the run."""
+    return isinstance(e, google.auth.exceptions.GoogleAuthError) or         _http_status(e) in (401, 402, 403, 404)
+
+
 def friendly_error(e: Exception) -> str:
     """One-line explanation of a failure, with what to do about it."""
     status = _http_status(e)
@@ -245,6 +250,13 @@ class Project:
         self.root = Path(root)
         for sub in ("assets", "scenes", "frames"):
             (self.root / sub).mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def open(cls, root: Path) -> "Project":
+        """An existing project; raises instead of creating an empty folder."""
+        if not (Path(root) / "plan.json").exists():
+            raise FileNotFoundError(f"No plan.json in {root}; not a ReelForge project folder.")
+        return cls(root)
 
     @classmethod
     def new(cls, base: Path, title: str) -> "Project":
@@ -584,7 +596,9 @@ def asset_jobs(plan: dict) -> list[dict]:
 
 
 def generate_assets(client, s: Settings, proj: Project, only: list[str] | None = None,
-                    skip_existing: bool = True, on_progress=None) -> None:
+                    skip_existing: bool = True, on_progress=None) -> dict[str, str]:
+    """Make reference images. Returns {asset_id: status}, status being one of
+    done | skipped | failed: <why> | fatal: <why>. One failure doesn't stop the rest."""
     plan = proj.load_plan()
     jobs = [j for j in asset_jobs(plan) if not only or j["id"] in only]
 
@@ -592,23 +606,32 @@ def generate_assets(client, s: Settings, proj: Project, only: list[str] | None =
         out = proj.asset_path(job["id"])
         if skip_existing and out.exists() and not only:
             return job["id"], "skipped"
+        if job["base"] and not proj.asset_path(job["base"]).exists():
+            return job["id"], f"failed: its base plate {job['base']} is missing"
         refs = [proj.asset_path(job["base"])] if job["base"] else None
-        usage = generate_image(client, s, job["prompt"], out, refs=refs, aspect=job["aspect"],
-                               proj=proj)
+        try:
+            usage = generate_image(client, s, job["prompt"], out, refs=refs, aspect=job["aspect"],
+                                   proj=proj)
+        except Exception as e:
+            return job["id"], ("fatal: " if _is_fatal(e) else "failed: ") + friendly_error(e)
         proj.log(kind="image", id=job["id"], model=s.image_model, prompt=job["prompt"],
                  refs=[job["base"]] if job["base"] else [], image_size=s.image_size,
                  aspect=job["aspect"], usage=usage,
                  cost_usd=call_cost(s.image_model, usage, s.image_size))
         return job["id"], "done"
 
+    results = {}
     independent = [j for j in jobs if not j["base"]]
     dependent = [j for j in jobs if j["base"]]
     with ThreadPoolExecutor(max_workers=4) as ex:
         for jid, status in ex.map(run, independent):
+            results[jid] = status
             on_progress and on_progress(jid, status)
     for j in dependent:                      # need their base plate first
         jid, status = run(j)
+        results[jid] = status
         on_progress and on_progress(jid, status)
+    return results
 
 
 # --------------------------------------------------------------------------
@@ -807,21 +830,83 @@ def stitch(proj: Project) -> Path:
 # One-shot
 # --------------------------------------------------------------------------
 
+def estimate_remaining(proj: Project, s: Settings) -> dict:
+    """What produce() would still make, and roughly what it costs."""
+    plan = proj.load_plan()
+    refs = [j["id"] for j in asset_jobs(plan) if not proj.asset_path(j["id"]).exists()]
+    scenes = [sc for sc in plan["scenes"] if not proj.takes(sc["id"])]
+    seconds = sum(sc["duration_s"] for sc in scenes)
+    usd = estimate_image_usd(s, len(refs)) + estimate_video_usd(s, seconds)
+    return {"refs": refs, "scenes": [sc["id"] for sc in scenes], "video_s": seconds,
+            "usd": round(usd, 2)}
+
+
+def produce(client, s: Settings, proj: Project, log=print) -> dict:
+    """Make everything the film still needs: missing references, one take for each scene
+    that has none, then the final cut. Finished work is skipped, so re-running resumes an
+    interrupted or failed run. Returns {"failed": {id: why}, "final": Path | None}."""
+    plan = proj.load_plan()
+    est = estimate_remaining(proj, s)
+    log(f"To make: {len(est['refs'])} references, {len(est['scenes'])} scenes "
+        f"({est['video_s']}s at {s.resolution}), about ${est['usd']:.2f}")
+    failed: dict[str, str] = {}
+
+    if est["refs"]:
+        log("Reference images…")
+        res = generate_assets(client, s, proj, on_progress=lambda i, st: log(f"  {i}: {st}"))
+        failed.update({i: st for i, st in res.items() if st.startswith(("failed", "fatal"))})
+        if any(st.startswith("fatal") for st in res.values()):
+            log("Stopping: this error will affect every call.")
+            return {"failed": failed, "final": None}
+
+    ids = [sc["id"] for sc in plan["scenes"]]
+    for i, sc in enumerate(plan["scenes"]):
+        if proj.takes(sc["id"]):
+            continue
+        no_img = [r for r in sc["refs"] if r in _lookup(plan) and not proj.asset_path(r).exists()]
+        if no_img:                                # don't pay for a shot without its identity refs
+            failed[sc["id"]] = f"skipped: missing references {', '.join(no_img)}"
+            log(f"  {sc['id']}: {failed[sc['id']]}")
+            continue
+        if sc.get("continuity") == "continuous" and i > 0 and not proj.takes(ids[i - 1]):
+            failed[sc["id"]] = f"skipped: continues from {ids[i - 1]}, which has no take"
+            log(f"  {sc['id']}: {failed[sc['id']]}")
+            continue
+        log(f"Shooting {sc['id']} ({sc['duration_s']}s, {s.resolution})…")
+        try:
+            out = generate_take(client, s, proj, sc["id"])
+        except Exception as e:
+            failed[sc["id"]] = friendly_error(e)
+            log(f"  {sc['id']} failed: {failed[sc['id']]}")
+            if _is_fatal(e):
+                log("Stopping: this error will affect every call.")
+                break
+            continue
+        meta = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+        cost = f"${meta['cost_usd']:.2f}" if meta.get("cost_usd") is not None else "cost unknown"
+        log(f"  {sc['id']}: {out.name}, {meta.get('duration_s')}s, {cost}")
+
+    final = None
+    missing = [sc_id for sc_id in ids if not proj.takes(sc_id)]
+    if missing:
+        log(f"Not stitching yet; scenes without a take: {', '.join(missing)}. "
+            "Fix the cause, then resume.")
+    else:
+        try:
+            final = stitch(proj)
+            log(f"Final cut: {final}")
+        except Exception as e:
+            failed["stitch"] = friendly_error(e)
+            log(f"Stitch failed: {failed['stitch']}")
+    log(f"Spent so far: {format_costs(project_costs(proj))}")
+    return {"failed": failed, "final": final}
+
+
 def run_all(story: str, style: str, s: Settings, base_dir: Path = Path("projects"),
-            n_scenes: int = 6, api_key: str | None = None, log=print) -> Project:
+            n_scenes: int = 6, api_key: str | None = None, log=print) -> tuple[Project, dict]:
+    """Full auto: plan, then produce(). Returns (project, produce result)."""
     client = make_client(s, api_key)
     log("Planning…")
     proj = new_project(client, s, story, style, n_scenes, base_dir)
-    plan = proj.load_plan()
-    log(f"Plan saved: {proj.plan_path}")
-    log("Generating reference images…")
-    generate_assets(client, s, proj, on_progress=lambda i, st: log(f"  {i}: {st}"))
-    for sc in plan["scenes"]:
-        log(f"Generating {sc['id']}…")
-        generate_take(client, s, proj, sc["id"])
-    try:
-        log(f"Final cut: {stitch(proj)}")
-    except RuntimeError as e:
-        log(str(e))
-    log(f"Spent: {format_costs(project_costs(proj))}")
-    return proj
+    log(f"Plan saved: {proj.plan_path} ({format_costs(project_costs(proj))})")
+    return proj, produce(client, s, proj, log)

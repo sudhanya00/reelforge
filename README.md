@@ -24,6 +24,13 @@ On Vertex, 1080p/4k (`delivery: uri`) needs a GCS bucket; 360p/720p return inlin
     streamlit run app.py             # step by step, with checkpoints
     python cli.py --story "..." --style "..."            # 9:16, 720p by default
     python cli.py --story "..." --resolution 360p         # cheap test run
+    python cli.py --resume projects/<folder>              # finish an interrupted/failed run
+
+Full-auto runs (CLI, or "Make the whole film" / "Make everything missing" in the UI) skip
+work that already exists, so re-running resumes where the last run stopped. Rate limits and
+server overloads are retried with backoff; billing, credential and permission errors stop
+the run at once instead of failing every remaining call. A scene whose reference images
+failed is skipped rather than shot without them.
 
 ## Costs
 Every generation call logs its token usage and an estimated `cost_usd` to `log.jsonl`

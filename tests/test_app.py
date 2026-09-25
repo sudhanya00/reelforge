@@ -46,3 +46,10 @@ def test_project_page_renders_all_tabs(workdir):
     labels = [b.label for b in at.button]
     assert any(l.startswith("Shoot a take (720p, ≈$") for l in labels)
     assert any(l.startswith("Apply fix (≈$") for l in labels)
+
+
+def test_final_cut_offers_to_finish(workdir):
+    at = run(AppTest.from_file(APP, default_timeout=60))
+    next(sb for sb in at.sidebar.selectbox if sb.label == "Open project").set_value(workdir.root.name)
+    run(at)
+    assert any(b.label.startswith("Make everything missing, then stitch (≈$") for b in at.button)

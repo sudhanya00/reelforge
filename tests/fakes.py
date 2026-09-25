@@ -46,18 +46,19 @@ class FakeClient:
     def __init__(self, mp4: bytes, image_mime="image/png"):
         self.calls, self.mp4, self.image_mime = [], mp4, image_mime
         self.fail_save = False
-        self.errors = []          # exceptions to raise on the next calls, in order
+        # exceptions to raise on the next calls of each kind, in order
+        self.errors = {"plan": [], "image": [], "video": []}
         self.models = NS(generate_content=self._generate_content)
         self.interactions = NS(create=self._create, get=self._get)
         self._n = 0
 
-    def _maybe_fail(self):
-        if self.errors:
-            raise self.errors.pop(0)
+    def _maybe_fail(self, kind):
+        if self.errors[kind]:
+            raise self.errors[kind].pop(0)
 
     def _generate_content(self, model, contents, config):
         self.calls.append(("generate_content", model, contents, config))
-        self._maybe_fail()
+        self._maybe_fail("image" if config.response_modalities == ["IMAGE"] else "plan")
         usage = NS(prompt_token_count=1000, candidates_token_count=2000, thoughts_token_count=500)
         if config.response_modalities == ["IMAGE"]:
             data = _png("JPEG" if self.image_mime == "image/jpeg" else "PNG")
@@ -68,7 +69,7 @@ class FakeClient:
 
     def _create(self, **kw):
         self.calls.append(("interactions.create", kw))
-        self._maybe_fail()
+        self._maybe_fail("video")
         self._n += 1
         video = None if self.fail_save else NS(data=base64.b64encode(self.mp4).decode(), uri=None)
         return NS(id=f"ix{self._n}", status="completed", output_video=video, errors=None,
