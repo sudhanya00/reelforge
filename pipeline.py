@@ -254,16 +254,21 @@ def plan_story(client: genai.Client, s: Settings, story: str, style: str,
 # 2. Prompt assembly (deterministic, so the look never drifts)
 # --------------------------------------------------------------------------
 
+def _dot(text: str) -> str:
+    """Planner fields may or may not end with a period; end with exactly one."""
+    return text.strip().rstrip(".") + "."
+
+
 def style_line(plan: dict) -> str:
     st = plan["style"]
-    return (f"Style: {st['look']}. Colour grade: {st['color_grade']}. "
-            f"Lens: {st['lens']}. Avoid: {st['avoid']}.")
+    return (f"Style: {_dot(st['look'])} Colour grade: {_dot(st['color_grade'])} "
+            f"Lens: {_dot(st['lens'])} Avoid: {_dot(st['avoid'])}")
 
 
 def character_sheet_prompt(plan: dict, c: dict) -> str:
     return (
-        f"Character reference sheet of {c['name']}. {c['appearance']}. "
-        f"Costume: {c['costume']}. "
+        f"Character reference sheet of {c['name']}. {_dot(c['appearance'])} "
+        f"Costume: {_dot(c['costume'])} "
         "Four views side by side on one canvas: front, three-quarter left, profile, "
         "three-quarter back. Full body, identical outfit and hair in every view. "
         "Plain neutral light-grey studio backdrop, soft even light, no shadows on backdrop. "
@@ -274,7 +279,7 @@ def character_sheet_prompt(plan: dict, c: dict) -> str:
 
 def prop_sheet_prompt(plan: dict, p: dict) -> str:
     return (
-        f"Prop reference sheet: {p['name']}. {p['description']}. "
+        f"Prop reference sheet: {p['name']}. {_dot(p['description'])} "
         "Side view and three-quarter front view on one canvas, plain neutral light-grey backdrop. "
         "No logos, no brand text, no labels. " + style_line(plan)
     )
@@ -285,8 +290,8 @@ def env_plate_prompt(plan: dict, e: dict, has_base: bool) -> str:
             "reference image; change only time of day, weather and lighting as described. "
             if has_base else "")
     return (
-        f"Environment plate, no people: {e['name']}. {e['description']}. "
-        f"Time and weather: {e['time_and_weather']}. Lighting: {e['lighting']}. "
+        f"Environment plate, no people: {e['name']}. {_dot(e['description'])} "
+        f"Time and weather: {_dot(e['time_and_weather'])} Lighting: {_dot(e['lighting'])} "
         f"Wide establishing view, eye level. {base}No text, no signs with words. "
         + style_line(plan)
     )
@@ -337,12 +342,12 @@ def scene_prompt(plan: dict, scene: dict, ref_ids: list[str], first_frame: bool)
     body = [
         " ".join(header),
         " ".join(bind),
-        f"Shot: {scene['shot']}.",
-        f"Action: {scene['action']}.",
-        f"Camera: {scene['camera']}.",
-        f"Lighting: {scene['lighting']}.",
+        f"Shot: {_dot(scene['shot'])}",
+        f"Action: {_dot(scene['action'])}",
+        f"Camera: {_dot(scene['camera'])}",
+        f"Lighting: {_dot(scene['lighting'])}",
         dia,
-        f"Sound design: {scene['audio']}. No background music unless described.",
+        f"Sound design: {_dot(scene['audio'])} No background music unless described.",
         style_line(plan),
         f"Duration about {scene['duration_s']} seconds. Single continuous shot, no scene cuts.",
     ]
