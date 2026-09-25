@@ -1,6 +1,8 @@
 """A/B round: planner v1 vs v2 on the same story, references and scenes (see docs/RND.md).
 
   python experiments/ab_round.py prepare  SRC_PROJECT      # paint missing refs, make the v2 copy
+  python experiments/ab_round.py fresh    STORY STYLE N --preset P --orientation 9:16
+                                           # plan the same story with v1 and with v2, paint both
   python experiments/ab_round.py shoot    V1 V2 s01 s03 s06 --takes 2
   python experiments/ab_round.py review   V1 V2 s01 s03 s06
   python experiments/ab_round.py report   V1 V2 s01 s03 s06
@@ -71,6 +73,27 @@ def prepare(src_id: str) -> None:
     log(f"v2 copy: {dst.name}  notes={len(notes)}  scene ids kept={ids_before == ids_after}")
     for n in notes:
         log(f"  [{n['scene'] or 'film'}] {n['change']}")
+
+
+def fresh(story: str, style: str, n: int, preset: str | None, orientation: str) -> None:
+    """Round 2+: plan the same story from scratch with each planner (no conversion)."""
+    out = {}
+    for version in ("v1", "v2"):
+        s = settings()
+        s.planner_version, s.orientation = version, orientation
+        c = pl.make_client(s)
+        t = time.time()
+        proj = pl.new_project(c, s, story, style, n, PROJECTS, preset=preset if version == "v2" else None)
+        log(f"{version}: planned {proj.root.name} in {time.time() - t:.0f}s")
+        res = pl.generate_assets(c, s, proj, on_progress=lambda i, st: log(f"  {i}: {st}"))
+        bad = {k: v for k, v in res.items() if v.startswith(("failed", "fatal"))}
+        if bad:
+            sys.exit(f"reference failures in {version}: {bad}")
+        out[version] = proj.root.name
+        plan = proj.load_plan()
+        for sc in plan["scenes"]:
+            log(f"  {sc['id']} {sc['duration_s']}s {sc.get('continuity')}: {sc['action']}")
+    log(f"V1={out['v1']} V2={out['v2']}")
 
 
 def shoot(v1: str, v2: str, scenes: list[str], takes: int) -> None:
@@ -155,12 +178,17 @@ def report(v1: str, v2: str, scenes: list[str]) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["prepare", "shoot", "review", "report"])
+    ap.add_argument("cmd", choices=["prepare", "fresh", "shoot", "review", "report"])
     ap.add_argument("projects", nargs="+", help="prepare: SRC; others: V1 V2 then scene ids")
     ap.add_argument("--takes", type=int, default=2)
+    ap.add_argument("--preset")
+    ap.add_argument("--orientation", default="9:16")
     a = ap.parse_args()
     if a.cmd == "prepare":
         prepare(a.projects[0])
+    elif a.cmd == "fresh":
+        story, style, n = a.projects
+        fresh(story, style, int(n), a.preset, a.orientation)
     else:
         v1, v2, *scenes = a.projects
         {"shoot": lambda: shoot(v1, v2, scenes, a.takes), "review": lambda: do_review(v1, v2, scenes),

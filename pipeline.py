@@ -95,8 +95,10 @@ class Settings:
     kling_model: str = "kling-3.0-omni"
     kling_audio: bool = True                             # native audio (costs more on Kling)
     planner_version: str = "v2"                          # v2: timed beats + director pass; v1 kept for A/B
-    max_retries: int = 3                                 # on 429 / 5xx only
-    retry_base_s: float = 10.0                           # waits 10s, 30s, 90s
+    max_retries: int = 4                                 # on 429 / 5xx only
+    image_workers: int = 2                               # parallel reference images (Vertex quotas are tight)
+    retry_base_s: float = 15.0                           # waits 15s, 45s, 2m, 2m: outlasts per-minute quotas
+    retry_max_s: float = 120.0
     # "gemini" = AI Studio key (GEMINI_API_KEY); "vertex" = bills a GCP project,
     # so GCP credits apply. Defaults come from the standard google-genai env vars.
     backend: str = field(default_factory=lambda: "vertex" if _env_bool("GOOGLE_GENAI_USE_VERTEXAI") else "gemini")
@@ -212,7 +214,7 @@ def _with_retry(fn, s: "Settings", what: str, proj: "Project | None" = None):
             status = _http_status(e)
             if status not in RETRYABLE_STATUS or attempt == s.max_retries:
                 raise
-            wait = s.retry_base_s * 3 ** attempt
+            wait = min(s.retry_base_s * 3 ** attempt, s.retry_max_s)
             if proj:
                 proj.log(kind="retry", what=what, status=status, attempt=attempt + 1, wait_s=wait)
             time.sleep(wait)
@@ -613,7 +615,7 @@ def generate_assets(client, s: Settings, proj: Project, only: list[str] | None =
     results = {}
     independent = [j for j in jobs if not j["base"]]
     dependent = [j for j in jobs if j["base"]]
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=max(1, s.image_workers)) as ex:
         for jid, status in ex.map(run, independent):
             results[jid] = status
             on_progress and on_progress(jid, status)
