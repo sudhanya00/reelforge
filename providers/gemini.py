@@ -39,7 +39,9 @@ class GeminiOmniVideo(VideoProvider):
     id = "gemini-omni"
     label = "Gemini Omni Flash"
     caps = VideoCaps(resolutions=("360p", "720p", "1080p", "4k"), durations=(2, 10),
-                     aspects=("16:9", "9:16"), max_refs=8, first_frame=True, edit=True, audio=True)
+                     aspects=("16:9", "9:16"), max_refs=8, first_frame=True, edit=True, audio=True,
+                     extend=True)
+    MAX_EXTENDED_S = 40           # extensions add ~10 s per turn, up to 40 s in total
 
     @property
     def model(self) -> str:
@@ -104,6 +106,17 @@ class GeminiOmniVideo(VideoProvider):
         interaction = self.client.interactions.create(
             model=self.model, previous_interaction_id=take_meta["interaction_id"],
             input=instruction, response_format=fmt, timeout=self.s.video_timeout_s)
+        return Submission(ids={"interaction_id": interaction.id, "status": interaction.status},
+                          handle={"interaction": interaction, "format": fmt})
+
+    def submit_extend(self, take_meta: dict, prompt: str) -> Submission:
+        """Continue the same take (same person, voice, room, camera) for about 10 more seconds."""
+        if "interaction_id" not in take_meta:
+            raise ProviderError(400, "Only a Gemini Omni take can be extended by Omni.")
+        fmt = take_meta["format"]
+        interaction = self.client.interactions.create(
+            model=self.model, previous_interaction_id=take_meta["interaction_id"],
+            input=prompt, response_format=fmt, timeout=self.s.video_timeout_s)
         return Submission(ids={"interaction_id": interaction.id, "status": interaction.status},
                           handle={"interaction": interaction, "format": fmt})
 

@@ -63,6 +63,7 @@ class VideoCaps:
     first_frame: bool
     edit: bool
     audio: bool
+    extend: bool = False          # can continue a clip (same take) for more seconds
 
 
 class ProviderError(Exception):
@@ -117,6 +118,9 @@ class VideoProvider:
 
     def submit_edit(self, take_meta: dict, instruction: str) -> Submission:
         raise ProviderError(400, f"{self.label} can't edit a take; shoot a new one instead.")
+
+    def submit_extend(self, take_meta: dict, prompt: str) -> Submission:
+        raise ProviderError(400, f"{self.label} can't extend a take.")
 
     def collect(self, sub: Submission) -> VideoResult:
         raise NotImplementedError

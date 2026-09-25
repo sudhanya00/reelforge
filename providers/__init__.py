@@ -37,7 +37,7 @@ def catalog(settings) -> list[dict]:
             "id": p.id, "label": p.label, "model": p.model, "configured": ok, "setup": why,
             "caps": {"resolutions": list(c.resolutions), "durations": list(c.durations),
                      "aspects": list(c.aspects), "max_refs": c.max_refs, "first_frame": c.first_frame,
-                     "edit": c.edit, "audio": c.audio},
+                     "edit": c.edit, "audio": c.audio, "extend": c.extend},
             "price_per_s": {r: round(p.price_per_s(r), 4) for r in c.resolutions},
             "edit_price_per_s": {r: round(p.price_per_s(r, edit=True), 4) for r in c.resolutions},
         })

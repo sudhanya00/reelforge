@@ -57,6 +57,24 @@ def _v2(plan):
 PLAN_V2 = _v2(PLAN)
 DIRECTOR_NOTES = [{"scene": "s01", "change": "Asha is already walking at 0 s", "reason": "no idle lead-in"}]
 
+FAKE_PROFILE = {
+    "name": "Mira Sol", "handle": "mirasol", "gender": "woman", "age": "27", "ethnicity": "Filipino",
+    "skin": "warm tan, light freckles", "hair": "shoulder-length black, wavy", "body": "petite",
+    "features": "small mole above the lip", "style": "thrifted casual", "outfit": "oversized olive cardigan",
+    "niche": "budget cooking", "persona": "warm, a little chaotic", "speech": "fast, says 'okay so'",
+    "voice": "bright alto", "setting": "a small studio-apartment kitchen with a green kettle",
+}
+FAKE_REEL = {
+    "title": "Three-ingredient pancakes", "hook": "Okay so you only need three things.",
+    "caption": "Broke-week breakfast #budget",
+    "segments": [
+        {"id": "a", "seconds": 12, "lines": ["Okay so you only need three things."], "delivery": "excited",
+         "action": "holds up an egg"},
+        {"id": "b", "seconds": 10, "lines": ["Banana, egg, oats. That's it."], "delivery": "matter-of-fact",
+         "action": "leans in"},
+    ],
+}
+
 FAKE_REVIEW = {
     "summary": "A usable shot with a slow start.",
     "beats_observed": [{"t_start": 0, "t_end": 2, "what": "Asha walks in"}],
@@ -123,6 +141,10 @@ class FakeClient:
             return NS(candidates=[NS(content=NS(parts=[part]), finish_reason="STOP")],
                       usage_metadata=usage, text=None)
         system = config.system_instruction or ""
+        if "fictional social-media creators" in system:          # influencer designer
+            return NS(text=json.dumps(FAKE_PROFILE), usage_metadata=usage)
+        if "short-form video scripts" in system:                 # influencer script
+            return NS(text=json.dumps(FAKE_REEL), usage_metadata=usage)
         if "film editor" in system:                              # the take reviewer
             return NS(text=json.dumps(FAKE_REVIEW), usage_metadata=usage)
         if "reviewing a production plan" in system:              # the director pass
