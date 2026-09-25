@@ -6,7 +6,7 @@ references attached, ffmpeg stitches the selected takes.
 
 ## Setup
     pip install -r requirements.txt
-    export GEMINI_API_KEY=...        # or paste it in the sidebar
+    echo GEMINI_API_KEY=... > .env   # or export it, or paste it in the sidebar
     # optional but recommended: ffmpeg on PATH (for continuity frames + stitching)
 
 ## Run

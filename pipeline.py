@@ -23,8 +23,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
+# GEMINI_API_KEY etc. from a .env next to this file; real env vars take precedence
+load_dotenv(Path(__file__).with_name(".env"))
 
 # --------------------------------------------------------------------------
 # Config
