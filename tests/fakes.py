@@ -124,3 +124,51 @@ def interactions_error(code: int, message: str = "boom"):
     import httpx
     from google.genai._gaos.errors import GenAiError
     return GenAiError(message, httpx.Response(code, request=httpx.Request("POST", "https://x")))
+
+
+class FakeKling:
+    """A stand-in for Kling's HTTP API (httpx.MockTransport): tasks, polling, download, billing."""
+
+    def __init__(self, mp4: bytes | dict[str, bytes], polls_before_done=1, delay=False):
+        import httpx
+        self.mp4, self.polls_before_done, self.delay = mp4, polls_before_done, delay
+        self.requests: list[tuple[str, str, dict | None]] = []
+        self.errors: list[tuple[int, int, str]] = []      # (http status, kling code, message) for next POSTs
+        self.fail_task: str | None = None                 # task ends 'failed' with this message
+        self.tasks: dict[str, dict] = {}
+        self.transport = httpx.MockTransport(self._handle)
+
+    def _handle(self, request):
+        import httpx
+        body = json.loads(request.content) if request.content else None
+        self.requests.append((request.method, request.url.path, body))
+        if request.method == "POST" and request.url.path.startswith("/omni-video/"):
+            if self.errors:
+                status, code, msg = self.errors.pop(0)
+                return httpx.Response(status, json={"code": code, "message": msg})
+            tid = f"k{len(self.tasks) + 1}"
+            aspect = body["settings"].get("aspect_ratio", "16:9")
+            self.tasks[tid] = {"polls": 0, "aspect": aspect, "seconds": body["settings"]["duration"]}
+            return httpx.Response(200, json={"code": 0, "data": {"id": tid, "status": "submitted"}})
+        if request.method == "GET" and request.url.path == "/tasks":
+            tid = request.url.params["task_ids"]
+            t = self.tasks[tid]
+            t["polls"] += 1
+            if self.delay:
+                time.sleep(2)
+            if self.fail_task:
+                task = {"id": tid, "status": "failed", "message": self.fail_task}
+            elif t["polls"] <= self.polls_before_done:
+                task = {"id": tid, "status": "processing"}
+            else:
+                task = {"id": tid, "status": "succeeded",
+                        "outputs": [{"type": "video", "url": f"https://cdn.fake-kling/{tid}.mp4",
+                                     "duration": str(t["seconds"])}],
+                        "billing": [{"charge_type": "unit", "amount": str(0.8 * t["seconds"]),
+                                     "package_type": "video"}]}
+            return httpx.Response(200, json={"code": 0, "data": [task]})
+        if request.url.host == "cdn.fake-kling":
+            tid = request.url.path.strip("/").removesuffix(".mp4")
+            clip = self.mp4 if isinstance(self.mp4, bytes) else self.mp4[self.tasks[tid]["aspect"]]
+            return httpx.Response(200, content=clip)
+        return httpx.Response(404, json={"code": 1202, "message": "no such method"})
