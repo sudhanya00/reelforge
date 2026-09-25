@@ -25,6 +25,15 @@ On Vertex, 1080p/4k (`delivery: uri`) needs a GCS bucket; 360p/720p return inlin
     python cli.py --story "..." --style "..."            # 9:16, 720p by default
     python cli.py --story "..." --resolution 360p         # cheap test run
 
+## Costs
+Every generation call logs its token usage and an estimated `cost_usd` to `log.jsonl`
+(prices live in `Settings.PRICES`). The UI shows spend per project and an estimate on
+every button that spends money; the CLI prints the total at the end.
+
+## Tests
+    pip install -r requirements-dev.txt
+    python -m pytest -q          # offline: a fake client stands in for the API, nothing is billed
+
 ## Project folder
     projects/<date>-<title>/
       plan.json           production bible (editable; also stores prompt overrides + chosen takes)

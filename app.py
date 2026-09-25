@@ -70,9 +70,7 @@ if proj is None:
     if c1.button("Write the plan", type="primary"):
         need_client()
         with st.spinner("Directing…"):
-            plan = pl.plan_story(client, s, story, style, n)
-        p = pl.Project.new(BASE, plan["title"])
-        p.save_plan(plan)
+            p = pl.new_project(client, s, story, style, n, BASE)
         st.success(f"Plan ready: {p.root.name}. Pick it in the sidebar to review.")
     if c2.button("Make the whole film (no checkpoints)"):
         need_client()
@@ -88,6 +86,7 @@ if proj is None:
 plan = proj.load_plan()
 st.title(plan["title"])
 st.caption(plan["logline"])
+st.caption(f"{plan.get('orientation', '?')} · spent so far: {pl.format_costs(pl.project_costs(proj))}")
 tab_plan, tab_assets, tab_scenes, tab_final = st.tabs(["Plan", "References", "Scenes", "Final cut"])
 
 with tab_plan:
@@ -100,7 +99,9 @@ with tab_plan:
             st.error(f"Invalid JSON: {e}")
 
 with tab_assets:
-    if st.button("Generate missing references", type="primary"):
+    n_missing = sum(not proj.asset_path(j["id"]).exists() for j in pl.asset_jobs(plan))
+    if st.button(f"Generate missing references ({n_missing}, ≈${pl.estimate_image_usd(s, n_missing):.2f})",
+                 type="primary", disabled=not n_missing):
         need_client()
         with st.spinner("Painting reference sheets…"):
             pl.generate_assets(client, s, proj)
@@ -118,7 +119,7 @@ with tab_assets:
                     st.info("Not generated yet.")
             with right:
                 new = st.text_area("Prompt", job["prompt"], key=f"ap_{job['id']}", height=220)
-                if st.button("Regenerate", key=f"ar_{job['id']}"):
+                if st.button(f"Regenerate (≈${pl.estimate_image_usd(s):.2f})", key=f"ar_{job['id']}"):
                     need_client()
                     if new != job["prompt"]:
                         overrides[job["id"]] = new
@@ -142,7 +143,8 @@ with tab_scenes:
             for c, r in zip(cols, refs):
                 c.image(str(proj.asset_path(r)), caption=r)
             new = st.text_area("Prompt sent to Omni", prompt, key=f"sp_{sc['id']}", height=220)
-            if st.button("Shoot a take", key=f"st_{sc['id']}", type="primary"):
+            est = pl.estimate_video_usd(s, sc["duration_s"])
+            if st.button(f"Shoot a take ({s.resolution}, ≈${est:.2f})", key=f"st_{sc['id']}", type="primary"):
                 need_client()
                 if new != prompt:
                     overrides[sc["id"]] = new
@@ -165,7 +167,14 @@ with tab_scenes:
                 st.video(str(take))
                 fix = st.text_input("Fix this take (e.g. 'make the snowfall heavier')",
                                     key=f"fx_{sc['id']}")
-                if st.button("Apply fix", key=f"fb_{sc['id']}") and fix:
+                # an edit comes back at the source take's resolution
+                tmeta = json.loads(take.with_suffix(".json").read_text(encoding="utf-8"))
+                tres = pl.Settings(video_model=s.video_model, resolution=tmeta["format"]["resolution"])
+                est = pl.estimate_video_usd(tres, tmeta.get("duration_s") or sc["duration_s"])
+                st.caption(f"This take: {tmeta.get('duration_s', '?')}s, {tmeta['format']['resolution']}, "
+                           f"cost ${tmeta['cost_usd']:.2f}" if tmeta.get("cost_usd") is not None else
+                           f"This take: {tmeta['format']['resolution']}, cost not recorded")
+                if st.button(f"Apply fix (≈${est:.2f})", key=f"fb_{sc['id']}") and fix:
                     need_client()
                     with st.spinner("Editing…"):
                         out = pl.edit_take(client, s, proj, sc["id"], take, fix)

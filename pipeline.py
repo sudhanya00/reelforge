@@ -12,6 +12,7 @@ the exact prompt + references that produced it.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import re
@@ -53,6 +54,22 @@ class Settings:
                    "image_model": "gemini-3-pro-image",              # GA id on Vertex
                    "video_model": "gemini-omni-1.1-flash-preview"},
     }
+    # USD list prices from ai.google.dev/gemini-api/docs/pricing (2026-09-25); Vertex assumed
+    # the same. Token prices are per 1M; thinking tokens bill at the "thoughts" rate if given,
+    # else the output rate. Image models bill per generated image by size.
+    PRICES: ClassVar[dict[str, dict]] = {
+        "gemini-3.1-pro-preview": {"input": 2.00, "output": 12.00},
+        "gemini-3-pro-image-preview": {"input": 2.00, "thoughts": 12.00,
+                                       "per_image": {"1K": 0.134, "2K": 0.134, "4K": 0.24}},
+        "gemini-3-pro-image": {"input": 2.00, "thoughts": 12.00,
+                               "per_image": {"1K": 0.134, "2K": 0.134, "4K": 0.24}},
+        "gemini-omni-1.1-flash": {"input": 1.50, "output": 17.50},
+        "gemini-omni-1.1-flash-preview": {"input": 1.50, "output": 17.50},
+    }
+    # Omni output tokens per second of video. 720p is Google's figure; 360p matched a real
+    # take exactly (11,586 tokens / 6 s); 1080p and 4k are from third-party write-ups.
+    VIDEO_TOKENS_PER_S: ClassVar[dict[str, int]] = {"360p": 1931, "720p": 5792,
+                                                    "1080p": 8688, "4k": 17376}
     planner_model: str = ""                              # "" = backend default
     image_model: str = ""
     video_model: str = ""
@@ -91,6 +108,79 @@ def make_client(s: Settings, api_key: str | None = None) -> genai.Client:
 
 
 # --------------------------------------------------------------------------
+# Cost tracking  (usage comes from the API; prices from Settings.PRICES)
+# --------------------------------------------------------------------------
+
+def _usage_gc(resp) -> dict:
+    u = getattr(resp, "usage_metadata", None)
+    return {"input": u.prompt_token_count or 0, "output": u.candidates_token_count or 0,
+            "thoughts": u.thoughts_token_count or 0} if u else {}
+
+
+def _usage_ix(interaction) -> dict:
+    u = getattr(interaction, "usage", None)
+    return {"input": u.total_input_tokens or 0, "output": u.total_output_tokens or 0,
+            "thoughts": u.total_thought_tokens or 0} if u else {}
+
+
+def call_cost(model: str, usage: dict, image_size: str | None = None) -> float | None:
+    """Estimated USD for one call; None if the model has no price or usage is missing."""
+    p = Settings.PRICES.get(model)
+    if not p or not usage:
+        return None
+    usd = usage.get("input", 0) * p["input"] / 1e6
+    usd += usage.get("thoughts", 0) * p.get("thoughts", p.get("output", 0)) / 1e6
+    if "per_image" in p:
+        usd += p["per_image"].get(image_size or "2K", 0)
+    else:
+        usd += usage.get("output", 0) * p["output"] / 1e6
+    return round(usd, 4)
+
+
+def estimate_video_usd(s: Settings, seconds: float) -> float:
+    """Output-token cost only (input + thinking add roughly 5-10%)."""
+    rate = Settings.PRICES.get(s.video_model, {}).get("output", 0)
+    return round(Settings.VIDEO_TOKENS_PER_S.get(s.resolution, 0) * seconds * rate / 1e6, 2)
+
+
+def estimate_image_usd(s: Settings, n: int = 1) -> float:
+    per = Settings.PRICES.get(s.image_model, {}).get("per_image", {})
+    return round(n * per.get(s.image_size, 0), 2)
+
+
+COSTED_KINDS = ("plan", "image", "video", "video_edit", "video_unsaved")
+
+
+def project_costs(proj: "Project") -> dict:
+    """Totals from log.jsonl: {usd, calls, unpriced, video_s, by_kind: {kind: {calls, usd}}}."""
+    tot = {"usd": 0.0, "calls": 0, "unpriced": 0, "video_s": 0.0, "by_kind": {}}
+    path = proj.root / "log.jsonl"
+    if not path.exists():
+        return tot
+    for line in path.read_text(encoding="utf-8").splitlines():
+        e = json.loads(line)
+        if e.get("kind") not in COSTED_KINDS:
+            continue
+        k = tot["by_kind"].setdefault(e["kind"], {"calls": 0, "usd": 0.0})
+        k["calls"] += 1
+        tot["calls"] += 1
+        tot["video_s"] += e.get("duration_s") or 0
+        if e.get("cost_usd") is None:
+            tot["unpriced"] += 1
+        else:
+            k["usd"] += e["cost_usd"]
+            tot["usd"] += e["cost_usd"]
+    tot["usd"] = round(tot["usd"], 2)
+    return tot
+
+
+def format_costs(c: dict) -> str:
+    pl = lambda n, w: f"{n} {w}" + ("" if n == 1 else "s")
+    s = f"${c['usd']:.2f} over {pl(c['calls'], 'call')}, {c['video_s']:.0f}s of video"
+    return s + (f" ({pl(c['unpriced'], 'call')} without usage data)" if c["unpriced"] else "")
+
+
+# --------------------------------------------------------------------------
 # Project folder helpers
 # --------------------------------------------------------------------------
 
@@ -104,7 +194,10 @@ class Project:
     def new(cls, base: Path, title: str) -> "Project":
         slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "untitled"
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
-        return cls(Path(base) / f"{stamp}-{slug}")
+        root, n = Path(base) / f"{stamp}-{slug}", 2
+        while (root / "plan.json").exists():
+            root, n = Path(base) / f"{stamp}-{slug}-{n}", n + 1
+        return cls(root)
 
     # plan
     @property
@@ -229,7 +322,8 @@ Rules that make AI clips succeed:
 
 
 def plan_story(client: genai.Client, s: Settings, story: str, style: str,
-               n_scenes: int = 6) -> dict:
+               n_scenes: int = 6) -> tuple[dict, dict]:
+    """Returns (plan, usage)."""
     prompt = (
         f"STORY / IDEA:\n{story}\n\n"
         f"VISUAL STYLE:\n{style or 'director’s choice, cinematic and photorealistic'}\n\n"
@@ -243,11 +337,23 @@ def plan_story(client: genai.Client, s: Settings, story: str, style: str,
             system_instruction=PLANNER_SYSTEM,
             response_mime_type="application/json",
             response_json_schema=PLAN_SCHEMA,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         ),
     )
     plan = json.loads(resp.text)
     plan["orientation"] = s.orientation
-    return plan
+    return plan, _usage_gc(resp)
+
+
+def new_project(client, s: Settings, story: str, style: str, n_scenes: int = 6,
+                base_dir: Path = Path("projects")) -> "Project":
+    """Plan the film, create its folder, and log the planning call with its cost."""
+    plan, usage = plan_story(client, s, story, style, n_scenes)
+    proj = Project.new(base_dir, plan["title"])
+    proj.save_plan(plan)
+    proj.log(kind="plan", model=s.planner_model, story=story, style=style, n_scenes=n_scenes,
+             usage=usage, cost_usd=call_cost(s.planner_model, usage))
+    return proj
 
 
 # --------------------------------------------------------------------------
@@ -369,7 +475,8 @@ def _img_part(path: Path) -> types.Part:
 
 
 def generate_image(client: genai.Client, s: Settings, prompt: str, out: Path,
-                   refs: list[Path] | None = None, aspect: str | None = None) -> Path:
+                   refs: list[Path] | None = None, aspect: str | None = None) -> dict:
+    """Writes the image to `out` (always PNG) and returns the call's usage."""
     contents = [_img_part(p) for p in (refs or [])] + [prompt]
     resp = client.models.generate_content(
         model=s.image_model,
@@ -378,13 +485,22 @@ def generate_image(client: genai.Client, s: Settings, prompt: str, out: Path,
             response_modalities=["IMAGE"],
             image_config=types.ImageConfig(aspect_ratio=aspect or s.orientation,
                                            image_size=s.image_size),
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         ),
     )
-    for part in resp.candidates[0].content.parts:
+    for part in (resp.candidates[0].content.parts if resp.candidates and resp.candidates[0].content else []):
         if part.inline_data and part.inline_data.data:
-            out.write_bytes(part.inline_data.data)
-            return out
-    raise RuntimeError(f"No image returned for {out.name}: {resp.text!r}")
+            data = part.inline_data.data
+            if part.inline_data.mime_type != "image/png":     # assets are .png everywhere
+                from PIL import Image
+                buf = io.BytesIO()
+                Image.open(io.BytesIO(data)).save(buf, format="PNG")
+                data = buf.getvalue()
+            out.write_bytes(data)
+            return _usage_gc(resp)
+    reason = resp.candidates[0].finish_reason if resp.candidates else getattr(resp, "prompt_feedback", None)
+    raise RuntimeError(f"No image returned for {out.stem} (reason: {reason}). "
+                       f"Often a safety block; try rewording the prompt.")
 
 
 def asset_jobs(plan: dict) -> list[dict]:
@@ -420,9 +536,11 @@ def generate_assets(client, s: Settings, proj: Project, only: list[str] | None =
         if skip_existing and out.exists() and not only:
             return job["id"], "skipped"
         refs = [proj.asset_path(job["base"])] if job["base"] else None
-        generate_image(client, s, job["prompt"], out, refs=refs, aspect=job["aspect"])
+        usage = generate_image(client, s, job["prompt"], out, refs=refs, aspect=job["aspect"])
         proj.log(kind="image", id=job["id"], model=s.image_model, prompt=job["prompt"],
-                 refs=[job["base"]] if job["base"] else [])
+                 refs=[job["base"]] if job["base"] else [], image_size=s.image_size,
+                 aspect=job["aspect"], usage=usage,
+                 cost_usd=call_cost(s.image_model, usage, s.image_size))
         return job["id"], "done"
 
     independent = [j for j in jobs if not j["base"]]
@@ -480,6 +598,17 @@ def _save_video(client, interaction, out: Path) -> None:
     out.write_bytes(client.files.download(file=vid.uri))
 
 
+def video_duration(path: Path) -> float | None:
+    if not shutil.which("ffprobe"):
+        return None
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                        "-of", "default=nw=1:nk=1", str(path)], capture_output=True, text=True)
+    try:
+        return round(float(r.stdout.strip()), 2)
+    except ValueError:
+        return None
+
+
 def extract_last_frame(video: Path, out: Path) -> Path | None:
     if not shutil.which("ffmpeg"):
         return None
@@ -525,6 +654,27 @@ def build_scene_request(plan: dict, proj: Project, scene: dict) -> tuple[str, li
     return prompt, parts, ref_ids
 
 
+def _collect_video(client, s: Settings, proj: Project, scene_id: str, interaction,
+                   meta: dict, kind: str) -> Path:
+    """Wait for the clip, save it as the next take, and log it with usage and cost."""
+    interaction = _await_interaction(client, interaction, s.video_timeout_s)
+    usage = _usage_ix(interaction)
+    cost = {"usage": usage, "cost_usd": call_cost(meta["model"], usage)}
+    out = proj.next_take_path(scene_id)
+    try:
+        _save_video(client, interaction, out)
+    except Exception:
+        # the generation may still have been billed; keep it in the cost log
+        proj.log(kind="video_unsaved", scene=scene_id, interaction_id=interaction.id,
+                 model=meta["model"], status=interaction.status, **cost)
+        raise
+    meta = {**meta, "take": out.name, "interaction_id": interaction.id,
+            "duration_s": video_duration(out), **cost}
+    out.with_suffix(".json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    proj.log(kind=kind, **meta)
+    return out
+
+
 def generate_take(client, s: Settings, proj: Project, scene_id: str) -> Path:
     plan = proj.load_plan()
     scene = next(sc for sc in plan["scenes"] if sc["id"] == scene_id)
@@ -533,6 +683,9 @@ def generate_take(client, s: Settings, proj: Project, scene_id: str) -> Path:
     fmt = {"type": "video", "aspect_ratio": plan.get("orientation", s.orientation),
            "resolution": s.resolution}
     if s.resolution in ("1080p", "4k"):
+        if s.backend == "vertex":           # fail before paying, not after
+            raise NotImplementedError("1080p/4k on Vertex is delivered to Cloud Storage, "
+                                      "which isn't wired up yet. Use 720p or lower.")
         fmt["delivery"] = "uri"
 
     interaction = client.interactions.create(
@@ -540,15 +693,9 @@ def generate_take(client, s: Settings, proj: Project, scene_id: str) -> Path:
     # record the id before anything else can fail, so a paid clip is always recoverable
     proj.log(kind="video_submitted", scene=scene_id, interaction_id=interaction.id,
              status=interaction.status)
-    interaction = _await_interaction(client, interaction, s.video_timeout_s)
-    out = proj.next_take_path(scene_id)
-    _save_video(client, interaction, out)
-
-    meta = {"scene": scene_id, "take": out.name, "interaction_id": interaction.id,
-            "prompt": prompt, "refs": ref_ids, "model": s.video_model, "format": fmt}
-    out.with_suffix(".json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    proj.log(kind="video", **meta)
-    return out
+    return _collect_video(client, s, proj, scene_id, interaction,
+                          {"scene": scene_id, "prompt": prompt, "refs": ref_ids,
+                           "model": s.video_model, "format": fmt}, kind="video")
 
 
 def edit_take(client, s: Settings, proj: Project, scene_id: str, take: Path,
@@ -566,14 +713,10 @@ def edit_take(client, s: Settings, proj: Project, scene_id: str, take: Path,
         input=text, response_format=meta["format"], timeout=s.video_timeout_s)
     proj.log(kind="video_submitted", scene=scene_id, interaction_id=interaction.id,
              status=interaction.status, edited_from=take.name)
-    interaction = _await_interaction(client, interaction, s.video_timeout_s)
-    out = proj.next_take_path(scene_id)
-    _save_video(client, interaction, out)
-    new_meta = {**meta, "take": out.name, "interaction_id": interaction.id,
-                "edited_from": take.name, "edit": text}
-    out.with_suffix(".json").write_text(json.dumps(new_meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    proj.log(kind="video_edit", **new_meta)
-    return out
+    base = {k: v for k, v in meta.items() if k not in ("usage", "cost_usd", "duration_s")}
+    return _collect_video(client, s, proj, scene_id, interaction,
+                          {**base, "model": s.video_model, "edited_from": take.name, "edit": text},
+                          kind="video_edit")
 
 
 # --------------------------------------------------------------------------
@@ -608,9 +751,8 @@ def run_all(story: str, style: str, s: Settings, base_dir: Path = Path("projects
             n_scenes: int = 6, api_key: str | None = None, log=print) -> Project:
     client = make_client(s, api_key)
     log("Planning…")
-    plan = plan_story(client, s, story, style, n_scenes)
-    proj = Project.new(base_dir, plan["title"])
-    proj.save_plan(plan)
+    proj = new_project(client, s, story, style, n_scenes, base_dir)
+    plan = proj.load_plan()
     log(f"Plan saved: {proj.plan_path}")
     log("Generating reference images…")
     generate_assets(client, s, proj, on_progress=lambda i, st: log(f"  {i}: {st}"))
@@ -621,4 +763,5 @@ def run_all(story: str, style: str, s: Settings, base_dir: Path = Path("projects
         log(f"Final cut: {stitch(proj)}")
     except RuntimeError as e:
         log(str(e))
+    log(f"Spent: {format_costs(project_costs(proj))}")
     return proj
