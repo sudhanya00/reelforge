@@ -29,9 +29,13 @@ with st.sidebar:
                                 type="password")
     s = pl.Settings(
         backend=backend, gcp_project=gcp_project, gcp_location=gcp_location,
-        planner_model=st.text_input("Planner model", pl.Settings.planner_model),
-        image_model=st.text_input("Image model", pl.Settings.image_model),
-        video_model=st.text_input("Video model", pl.Settings.video_model),
+        # keyed by backend so switching backend resets these to that backend's ids
+        planner_model=st.text_input("Planner model", pl.Settings.MODELS[backend]["planner_model"],
+                                    key=f"pm_{backend}"),
+        image_model=st.text_input("Image model", pl.Settings.MODELS[backend]["image_model"],
+                                  key=f"im_{backend}"),
+        video_model=st.text_input("Video model", pl.Settings.MODELS[backend]["video_model"],
+                                  key=f"vm_{backend}"),
         orientation=st.radio("Orientation", ["16:9", "9:16"], horizontal=True),
         resolution=st.selectbox("Video resolution", ["360p", "720p", "1080p", "4k"], index=1),
         image_size=st.selectbox("Image size", ["1K", "2K", "4K"], index=1),

@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import ClassVar
 
 import google.auth
 from dotenv import load_dotenv
@@ -41,9 +42,19 @@ def _env_bool(name: str) -> bool:
 
 @dataclass
 class Settings:
-    planner_model: str = "gemini-3.1-pro-preview"
-    image_model: str = "gemini-3-pro-image-preview"      # Nano Banana Pro
-    video_model: str = "gemini-omni-1.1-flash"
+    # Default model ids per backend (the same model can have a different id on each).
+    # Checked against models.get on 2026-09-25.
+    MODELS: ClassVar[dict[str, dict[str, str]]] = {
+        "gemini": {"planner_model": "gemini-3.1-pro-preview",
+                   "image_model": "gemini-3-pro-image-preview",      # Nano Banana Pro
+                   "video_model": "gemini-omni-1.1-flash"},
+        "vertex": {"planner_model": "gemini-3.1-pro-preview",
+                   "image_model": "gemini-3-pro-image-preview",
+                   "video_model": "gemini-omni-1.1-flash-preview"},
+    }
+    planner_model: str = ""                              # "" = backend default
+    image_model: str = ""
+    video_model: str = ""
     orientation: str = "16:9"                            # "16:9" | "9:16"
     resolution: str = "720p"                             # 360p | 720p | 1080p | 4k
     image_size: str = "2K"                               # 1K | 2K | 4K
@@ -53,6 +64,11 @@ class Settings:
     backend: str = field(default_factory=lambda: "vertex" if _env_bool("GOOGLE_GENAI_USE_VERTEXAI") else "gemini")
     gcp_project: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLOUD_PROJECT", ""))
     gcp_location: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLOUD_LOCATION", "global"))
+
+    def __post_init__(self):
+        for k, v in self.MODELS[self.backend].items():
+            if not getattr(self, k):
+                setattr(self, k, v)
 
 
 def make_client(s: Settings, api_key: str | None = None) -> genai.Client:
