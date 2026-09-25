@@ -17,7 +17,7 @@ import uuid
 
 import httpx
 
-from prompts import scene_lines
+from prompts import dialogue_line, dot, scene_lines, shots_of, style_line
 from .base import ProviderError, Shot, Submission, VideoCaps, VideoProvider, VideoResult
 
 BASE_URL = os.environ.get("KLING_BASE_URL", "https://api-singapore.klingai.com")
@@ -73,8 +73,25 @@ class KlingOmniVideo(VideoProvider):
         head = ["The shot starts exactly on the provided first frame."] if shot.first_frame else []
         tail = ["Use the reference images for identity and setting only; they must not appear as literal frames."] \
             if shot.refs else []
-        return "\n".join(head + ([" ".join(bind)] if bind else []) +
-                         scene_lines(shot.plan, shot.scene, shot.duration_s) + tail)
+        shots = shots_of(shot.scene)
+        body = self._multi_shot_lines(shot, shots) if len(shots) > 1 else \
+            scene_lines(shot.plan, shot.scene, shot.duration_s)
+        return "\n".join(head + ([" ".join(bind)] if bind else []) + body + tail)
+
+    @staticmethod
+    def _multi_shot_lines(shot: Shot, shots: list[list[dict]]) -> list[str]:
+        """Kling's in-clip cut syntax: "shot n, seconds, words; ..." with whole-second shots
+        that add up to the clip's duration."""
+        lengths = [max(1, round(sh[-1]["t_end"] - sh[0]["t_start"])) for sh in shots]
+        lengths[-1] = max(1, shot.duration_s - sum(lengths[:-1]))
+        segs = [f"shot {i}, {n}, " + " ".join(f"{dot(b['action'])} {dot(b['camera'])}" for b in sh)
+                for i, (sh, n) in enumerate(zip(shots, lengths), start=1)]
+        plan, scene = shot.plan, shot.scene
+        lines = ["; ".join(segs) + ";", f"Lighting: {dot(scene['lighting'])}", dialogue_line(plan, scene),
+                 f"Sound design: {dot(scene['audio'])} No background music unless described.", style_line(plan)]
+        if plan["style"].get("motion"):
+            lines.append(f"Motion: {dot(plan['style']['motion'])}")
+        return lines
 
     # ---------------------------------------------------------------- API
 
@@ -115,7 +132,8 @@ class KlingOmniVideo(VideoProvider):
             contents.append({"type": "refer_image", "url": _b64(r.path), "id": f"image_{i}"})
         return self._create(contents, {
             "resolution": shot.resolution, "duration": shot.duration_s, "aspect_ratio": shot.aspect,
-            "audio": "native" if self.s.kling_audio else "off", "multi_shot": False,
+            "audio": "native" if self.s.kling_audio else "off",
+            "multi_shot": len(shots_of(shot.scene)) > 1,
         })
 
     def submit_edit(self, take_meta: dict, instruction: str) -> Submission:

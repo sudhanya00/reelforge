@@ -219,7 +219,7 @@ def test_scene_provider_choice_prompt_and_take(api, pid, kling_api):
     v = api.put(f"/api/projects/{pid}/scenes/s01/provider", json={"provider": "kling"}).json()
     s01 = v["scenes"][0]
     assert s01["provider"] == "kling" and s01["provider_chosen"]
-    assert "@image" in s01["prompt"] or "Shot:" in s01["prompt"]
+    assert "Timeline:" in s01["prompt"] and "<IMAGE_REF" not in s01["prompt"]
     assert s01["render"] == {"resolution": "720p", "duration_s": 6}
     # a kling-specific prompt override doesn't leak into the omni prompt
     v = api.put(f"/api/projects/{pid}/prompt", json={"id": "s01", "prompt": "K", "provider": "kling"}).json()
@@ -254,3 +254,31 @@ def test_review_a_take(api, pid):
     v = api.get(f"/api/projects/{pid}").json()
     assert v["costs"]["by_kind"]["review"]["calls"] == 1
     assert api.post(f"/api/projects/{pid}/scenes/s01/takes/nope.mp4/review").status_code == 404
+
+
+def test_new_film_v2_with_preset_and_pacing(api):
+    st = api.get("/api/state").json()
+    assert {x["id"] for x in st["styles"]} >= {"live_action", "animated_3d", "anime"}
+    assert [x["id"] for x in st["pacing"]] == ["calm", "balanced", "kinetic"]
+    j = wait(api, api.post("/api/projects", json={"story": "x", "scenes": 3, "preset": "anime",
+                                                 "pacing": "kinetic"}).json())
+    plan = api.get(f"/api/projects/{j['result']['project']}").json()["plan"]
+    assert plan["planner"] == "v2" and plan["brief"]["preset"] == "anime"
+    assert plan["director_notes"] and all(sc["beats"] for sc in plan["scenes"])
+
+
+def test_direct_again_keeps_project_fields(api, pid):
+    api.put(f"/api/projects/{pid}/scenes/s01/provider", json={"provider": "kling"})
+    j = wait(api, api.post(f"/api/projects/{pid}/direct").json())
+    assert j["status"] == "done" and j["result"]["notes"] == 1
+    plan = api.get(f"/api/projects/{pid}").json()["plan"]
+    assert plan["video_providers"] == {"s01": "kling"} and plan["director_notes"]
+
+
+def test_saving_the_plan_normalises_beats(api, pid):
+    plan = api.get(f"/api/projects/{pid}").json()["plan"]
+    plan["scenes"][0]["beats"] = [{"t_start": 3, "t_end": 7.2, "action": "b", "camera": "c"},
+                                  {"t_start": 0.4, "t_end": 3, "action": "a", "camera": "c"}]
+    v = api.put(f"/api/projects/{pid}/plan", json={"plan": plan}).json()
+    sc = v["plan"]["scenes"][0]
+    assert [b["t_start"] for b in sc["beats"]] == [0, 3] and sc["duration_s"] == 8

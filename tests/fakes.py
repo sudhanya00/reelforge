@@ -38,6 +38,25 @@ PLAN = {
 }
 
 
+def _v2(plan):
+    """PLAN with what planner v2 adds: pacing, a full style profile, timed beats."""
+    import copy
+    p = copy.deepcopy(plan)
+    p["pacing"] = "balanced"
+    p["style"].update({"medium": "live-action film", "motion": "natural weight",
+                       "camera_grammar": "motivated moves", "sheet_look": "photographic reference"})
+    for sc in p["scenes"]:
+        d = sc["duration_s"]
+        sc["multi_shot"] = False
+        sc["beats"] = [{"t_start": 0, "t_end": d / 2, "action": f"{sc['action']} begins", "camera": "holds"},
+                       {"t_start": d / 2, "t_end": d, "action": f"{sc['action']} completes", "camera": "pushes in"}]
+    p["scenes"][1]["risks"] = [{"what": "hands on a cup", "handling": "cup already in hand"}]
+    return p
+
+
+PLAN_V2 = _v2(PLAN)
+DIRECTOR_NOTES = [{"scene": "s01", "change": "Asha is already walking at 0 s", "reason": "no idle lead-in"}]
+
 FAKE_REVIEW = {
     "summary": "A usable shot with a slow start.",
     "beats_observed": [{"t_start": 0, "t_end": 2, "what": "Asha walks in"}],
@@ -103,8 +122,13 @@ class FakeClient:
             part = NS(inline_data=NS(data=data, mime_type=self.image_mime))
             return NS(candidates=[NS(content=NS(parts=[part]), finish_reason="STOP")],
                       usage_metadata=usage, text=None)
-        if "film editor" in (config.system_instruction or ""):   # the take reviewer
+        system = config.system_instruction or ""
+        if "film editor" in system:                              # the take reviewer
             return NS(text=json.dumps(FAKE_REVIEW), usage_metadata=usage)
+        if "reviewing a production plan" in system:              # the director pass
+            return NS(text=json.dumps({"plan": PLAN_V2, "notes": DIRECTOR_NOTES}), usage_metadata=usage)
+        if "timed BEATS" in system:                              # planner v2
+            return NS(text=json.dumps(PLAN_V2), usage_metadata=usage)
         return NS(text=json.dumps(PLAN), usage_metadata=usage)
 
     def _create(self, **kw):

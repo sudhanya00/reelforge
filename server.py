@@ -23,7 +23,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import director
 import pipeline as pl
+import styles
 import review as rv
 import providers
 
@@ -114,7 +116,7 @@ def client_for(s: pl.Settings):
 DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 180,
                      "video_1080p": 240, "video_4k": 300, "stitch": 6,
                      "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360,
-                     "review": 40}
+                     "review": 40, "direct": 60}
 
 
 def video_key(provider: str, resolution: str) -> str:
@@ -397,7 +399,10 @@ def update_plan(proj: pl.Project, fn) -> dict:
 def get_state():
     s = current_settings()
     return {"settings": settings_view(s), "ffmpeg": bool(shutil.which("ffmpeg")),
-            "fake": CONFIG["fake"], "projects_dir": str(projects_dir()), "typical_s": typical_s()}
+            "fake": CONFIG["fake"], "projects_dir": str(projects_dir()), "typical_s": typical_s(),
+            "styles": [{"id": k, "label": v["label"], "pacing": v["pacing"]} for k, v in styles.STYLE_PRESETS.items()],
+            "pacing": [{"id": k, "label": v["label"], "brief": styles.pacing_brief(k)} for k, v in styles.PACING.items()],
+            "planner_version": s.planner_version}
 
 
 class SettingsIn(BaseModel):
@@ -475,6 +480,8 @@ class NewFilm(BaseModel):
     style: str = ""
     scenes: int = 6
     orientation: str | None = None
+    preset: str | None = None                        # a styles.STYLE_PRESETS id
+    pacing: str | None = None                        # calm | balanced | kinetic
     auto: bool = False                               # plan, then make everything
 
 
@@ -489,9 +496,11 @@ def create_project(body: NewFilm):
     def run(job: Job):
         client = client_for(s)
         job.log("Writing the production plan…")
-        job.step("plan", "Writing the plan")
+        job.step("plan", "Writing and directing the plan" if s.planner_version == "v2" else "Writing the plan")
         proj = pl.new_project(client, s, body.story.strip(), body.style.strip(),
-                              max(1, min(body.scenes, 20)), projects_dir())
+                              max(1, min(body.scenes, 20)), projects_dir(),
+                              preset=body.preset if body.preset in styles.STYLE_PRESETS else None,
+                              pacing=body.pacing if body.pacing in styles.PACING else None)
         job.project = proj.root.name
         job.claims = {"*"}
         job.log(f"Plan ready: {proj.load_plan()['title']}")
@@ -531,7 +540,7 @@ def put_plan(pid: str, body: PlanIn):
         keep = {k: plan[k] for k in ("prompt_overrides", "selected_takes", "orientation", "video_providers")
                 if k in plan}
         plan.clear()
-        plan.update({**body.plan, **keep})
+        plan.update({**director.normalize(body.plan), **keep})
     update_plan(proj, apply)
     return project_view(proj)
 
@@ -705,6 +714,26 @@ def review_take(pid: str, sid: str, take: str):
         return {"verdict": r["verdict"], "overall": r["overall"]}
 
     return submit("review", f"Reviewing {sid}", pid, {f"review:{sid}"}, run).view()
+
+
+@app.post("/api/projects/{pid}/direct")
+def direct(pid: str):
+    """Run the director pass again on the current plan (e.g. after your edits)."""
+    proj = open_project(pid)
+    s = current_settings()
+
+    def run(job: Job):
+        job.step("direct", "Directing the plan")
+        with plan_lock(pid):
+            plan = proj.load_plan()
+        revised, notes, usage = pl.direct_plan(client_for(s), s, plan)
+        with plan_lock(pid):
+            proj.save_plan(revised)
+        proj.log(kind="plan", model=s.planner_model, planner="director", usage=usage,
+                 cost_usd=pl.call_cost(s.planner_model, usage), director_notes=len(notes))
+        return {"notes": len(notes)}
+
+    return submit("direct", "Directing the plan", pid, {"*"}, run).view()
 
 
 @app.post("/api/projects/{pid}/produce")

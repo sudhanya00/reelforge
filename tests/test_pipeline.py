@@ -42,7 +42,8 @@ def test_estimates(s):
 def test_new_project_logs_plan_cost(proj, s):
     e = log_entries(proj)[0]
     assert e["kind"] == "plan" and e["model"] == s.planner_model
-    assert e["cost_usd"] == pytest.approx((1000 * 2 + 2500 * 12) / 1e6)
+    # planner v2 = draft + director pass: two calls
+    assert e["cost_usd"] == pytest.approx(2 * (1000 * 2 + 2500 * 12) / 1e6) and e["planner"] == "v2"
     assert proj.load_plan()["orientation"] == "16:9"
 
 

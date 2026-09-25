@@ -32,6 +32,7 @@ from google.genai import errors as genai_errors
 from google.genai import types
 from google.genai._gaos.errors import GenAiError   # raised by client.interactions.*
 
+import director
 import providers
 from prompts import dot as _dot, edit_instruction, style_line
 from providers import ProviderError, Ref, Shot
@@ -93,6 +94,7 @@ class Settings:
     image_provider: str = "nano-banana"
     kling_model: str = "kling-3.0-omni"
     kling_audio: bool = True                             # native audio (costs more on Kling)
+    planner_version: str = "v2"                          # v2: timed beats + director pass; v1 kept for A/B
     max_retries: int = 3                                 # on 429 / 5xx only
     retry_base_s: float = 10.0                           # waits 10s, 30s, 90s
     # "gemini" = AI Studio key (GEMINI_API_KEY); "vertex" = bills a GCP project,
@@ -416,9 +418,48 @@ Rules that make AI clips succeed:
 - Keep the whole story within the requested scene count."""
 
 
+def _json_call(client, s: Settings, system: str, prompt: str, schema: dict, what: str) -> tuple[dict, dict]:
+    """One structured call to the planner model: (parsed JSON, usage)."""
+    resp = _with_retry(lambda: client.models.generate_content(
+        model=s.planner_model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            response_mime_type="application/json",
+            response_json_schema=schema,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        ),
+    ), s, what)
+    return json.loads(resp.text), _usage_gc(resp)
+
+
+def _add_usage(a: dict, b: dict) -> dict:
+    return {k: a.get(k, 0) + b.get(k, 0) for k in set(a) | set(b)}
+
+
+def direct_plan(client, s: Settings, plan: dict) -> tuple[dict, list[dict], dict]:
+    """The director pass: review a plan before anything is generated. Returns
+    (revised plan with the project's own fields kept, notes, usage)."""
+    out, usage = _json_call(client, s, director.DIRECTOR_SYSTEM, director.director_prompt(plan),
+                            director.DIRECTOR_SCHEMA, "direct")
+    revised = director.normalize(out["plan"])
+    revised.update({k: plan[k] for k in director.PROJECT_KEYS if k in plan})
+    revised["director_notes"] = out["notes"]
+    return revised, out["notes"], usage
+
+
 def plan_story(client: genai.Client, s: Settings, story: str, style: str,
-               n_scenes: int = 6) -> tuple[dict, dict]:
-    """Returns (plan, usage)."""
+               n_scenes: int = 6, preset: str | None = None, pacing: str | None = None) -> tuple[dict, dict]:
+    """Returns (plan, usage). v2 drafts timed beats and then runs the director pass."""
+    if s.planner_version == "v2":
+        prompt = director.planner_prompt(story, style, n_scenes, s.orientation, preset, pacing)
+        draft, usage = _json_call(client, s, director.PLANNER_V2_SYSTEM, prompt, director.PLAN_SCHEMA_V2, "plan")
+        draft = director.normalize(draft)
+        draft["orientation"] = s.orientation
+        draft["brief"] = {"story": story, "style": style, "preset": preset, "pacing": draft.get("pacing") or pacing}
+        draft["planner"] = "v2"
+        plan, _, usage2 = direct_plan(client, s, draft)
+        return plan, _add_usage(usage, usage2)
     prompt = (
         f"STORY / IDEA:\n{story}\n\n"
         f"VISUAL STYLE:\n{style or 'director’s choice, cinematic and photorealistic'}\n\n"
@@ -441,13 +482,16 @@ def plan_story(client: genai.Client, s: Settings, story: str, style: str,
 
 
 def new_project(client, s: Settings, story: str, style: str, n_scenes: int = 6,
-                base_dir: Path = Path("projects")) -> "Project":
-    """Plan the film, create its folder, and log the planning call with its cost."""
-    plan, usage = plan_story(client, s, story, style, n_scenes)
+                base_dir: Path = Path("projects"), preset: str | None = None,
+                pacing: str | None = None) -> "Project":
+    """Plan the film, create its folder, and log the planning call(s) with their cost."""
+    plan, usage = plan_story(client, s, story, style, n_scenes, preset, pacing)
     proj = Project.new(base_dir, plan["title"])
     proj.save_plan(plan)
-    proj.log(kind="plan", model=s.planner_model, story=story, style=style, n_scenes=n_scenes,
-             usage=usage, cost_usd=call_cost(s.planner_model, usage))
+    proj.log(kind="plan", model=s.planner_model, planner=s.planner_version, story=story, style=style,
+             preset=preset, pacing=plan.get("pacing"), n_scenes=n_scenes, usage=usage,
+             cost_usd=call_cost(s.planner_model, usage),
+             director_notes=len(plan.get("director_notes", [])))
     return proj
 
 
@@ -463,15 +507,20 @@ def character_sheet_prompt(plan: dict, c: dict) -> str:
         "three-quarter back. Full body, identical outfit and hair in every view. "
         "Plain neutral light-grey studio backdrop, soft even light, no shadows on backdrop. "
         "No text, no labels, no captions. "
-        + style_line(plan)
+        + _sheet_look(plan) + style_line(plan)
     )
+
+
+def _sheet_look(plan: dict) -> str:
+    look = plan["style"].get("sheet_look")
+    return f"Rendered as: {_dot(look)} " if look else ""
 
 
 def prop_sheet_prompt(plan: dict, p: dict) -> str:
     return (
         f"Prop reference sheet: {p['name']}. {_dot(p['description'])} "
         "Side view and three-quarter front view on one canvas, plain neutral light-grey backdrop. "
-        "No logos, no brand text, no labels. " + style_line(plan)
+        "No logos, no brand text, no labels. " + _sheet_look(plan) + style_line(plan)
     )
 
 
