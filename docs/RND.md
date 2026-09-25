@@ -150,3 +150,31 @@ Changes to make:
 - Director rule: hand-offs and fingers on small objects are implied across a cut or scene
   boundary, not shown in close-up. This is restaging that keeps the story, per the balance rule.
 - Keep push-ins moderate within one beat (e.g. medium to close-up, not to extreme close-up).
+
+## Check after round 2 fixes (2026-09-26)
+
+Round 2's v2 plan re-directed with the new rules (no in-clip cuts, hand-offs implied across the
+edit), then s01 and s02 re-shot, 2 takes each, 9:16, 360p. About $1 (director $0.07).
+
+Result: mean 3.25, 0 keep / 0 fix / 4 reshoot. The targeted failures were gone (no cut drift, no
+fingers merging into an envelope), but other failures took their place:
+1. **Objects appearing from nowhere.** With the hand-off implied, the courier had no letter at
+   0 s and it "materialised" in her hand at ~2 s (both takes). Rule: any object a character
+   uses must be visible from the first frame.
+2. **Spatial staging reversed.** Both s02 takes put the courier inside the doorway and the
+   postman in the rain. The beats never said who is inside and who is outside. Rule: state
+   positions explicitly (inside/outside, screen left/right, facing).
+3. **Turning vehicles still morph.** The director kept "leans into a turn"; both takes morphed
+   the scooter mid-turn. After three rounds this is the most reliable failure: vehicles should
+   travel straight unless the story truly needs the turn.
+4. **Costume drift despite a correct reference.** The sheet shows a black helmet with a visor
+   (checked); 3 of 4 takes gave a silver or visor-less helmet. The model isn't following the
+   reference closely at this setting.
+
+What three rounds say (28 reviewed takes): planner changes fix the failures they target, but
+Omni at 360p has a floor on vehicles, hands and small objects, and prompt changes are now
+trading one failure for another. The larger levers are probably outside the prompt:
+- **Resolution**: at 360p (vertical: 360x640) a helmet visor or a hand is a few pixels wide.
+- **Reference format**: a 16:9 four-view sheet gives each figure a small slice of the frame; a
+  single large front view may carry costume better.
+- **Model**: the same scenes on Kling, when a key is available.

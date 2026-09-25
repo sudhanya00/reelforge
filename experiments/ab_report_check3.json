@@ -1,0 +1,104 @@
+[
+ {
+  "scene": "s01",
+  "take": "take_03.mp4",
+  "verdict": "reshoot",
+  "overall": 3.4,
+  "cost": 0.1853,
+  "scores": {
+   "identity": 3,
+   "costume": 2,
+   "environment": 5,
+   "action": 4,
+   "camera": 3,
+   "pacing": 4,
+   "physics": 2,
+   "artifacts": 2,
+   "style": 4,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-5.0s] major costume: The rider is wearing a silver, open-face helmet instead of the briefed black helmet with a clear visor.",
+   "[0.0-5.0s] minor camera: The camera angle is at eye level, ignoring the prompt's request for a low-angle shot.",
+   "[3.0-5.0s] fatal artifacts: The scooter's front shield, mudguard, and logo warp and morph significantly as the vehicle turns.",
+   "[3.0-5.0s] fatal artifacts: The rider's hands lose definition and melt into the handlebars."
+  ]
+ },
+ {
+  "scene": "s01",
+  "take": "take_04.mp4",
+  "verdict": "reshoot",
+  "overall": 3.4,
+  "cost": 0.1827,
+  "scores": {
+   "identity": 4,
+   "costume": 4,
+   "environment": 4,
+   "action": 3,
+   "camera": 3,
+   "pacing": 4,
+   "physics": 1,
+   "artifacts": 2,
+   "style": 4,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-5.01s] minor costume: The helmet is missing the clear face visor seen in the reference images.",
+   "[0.0-5.01s] minor camera: The camera maintains a fixed distance rather than slowly pushing in toward the character's face.",
+   "[0.0-5.01s] major physics: The water wake in front of the tire is a static, rigid V-shape that glides over the surface rather than dynamically splashing.",
+   "[2.5-5.01s] fatal physics: As the scooter turns, it moves sideways without the wheels rolling in that direction, completely breaking physical laws.",
+   "[2.5-5.01s] major artifacts: The scooter's front fender, steering column, and wheel severely morph and detach from each other during the turn."
+  ]
+ },
+ {
+  "scene": "s02",
+  "take": "take_03.mp4",
+  "verdict": "reshoot",
+  "overall": 3.3,
+  "cost": 0.1851,
+  "scores": {
+   "identity": 4,
+   "costume": 2,
+   "environment": 5,
+   "action": 2,
+   "camera": 4,
+   "pacing": 4,
+   "physics": 2,
+   "artifacts": 1,
+   "style": 4,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-5.01s] major action: The courier is inside the doorway and the postman is out in the rain, reversing the expected scenario based on the 'Postman's Doorway' reference.",
+   "[0.0-5.01s] minor costume: The courier is wearing black gloves, which are not present in the character reference.",
+   "[1.0-3.5s] major artifacts: The courier's helmet visor morphs and extrudes into a bizarre, oversized plastic shield.",
+   "[2.0-2.5s] fatal artifacts: The letter suddenly pops into existence in the courier's hand out of thin air.",
+   "[2.25-5.01s] major costume: The letter is a flat, blank white rectangle, missing the crumpled texture, dampness, and blue handwriting of the prop reference."
+  ]
+ },
+ {
+  "scene": "s02",
+  "take": "take_04.mp4",
+  "verdict": "reshoot",
+  "overall": 2.9,
+  "cost": 0.1835,
+  "scores": {
+   "identity": 3,
+   "costume": 2,
+   "environment": 4,
+   "action": 1,
+   "camera": 5,
+   "pacing": 2,
+   "physics": 1,
+   "artifacts": 2,
+   "style": 4,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-5.01s] fatal action: Character positions are reversed: the courier is inside the warm doorway while the postman arrives from the rain.",
+   "[0.0-5.01s] minor costume: The courier's helmet lacks a proper visor and the postman is missing his reading glasses.",
+   "[1.0-1.5s] major physics: The postman's hand clips and merges into the courier's hand as he steps closer.",
+   "[2.25-2.5s] fatal physics: The letter magically materialises out of thin air into the courier's hands."
+  ]
+ }
+]
