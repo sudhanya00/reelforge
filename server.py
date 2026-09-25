@@ -955,16 +955,9 @@ def log_usd(path: Path) -> float:
     return round(sum(json.loads(l).get("cost_usd") or 0 for l in path.read_text(encoding="utf-8").splitlines()), 2)
 
 
-def reel_estimate(s: pl.Settings, plan: dict) -> dict:
-    """Extensions are new here: until a live run shows how they're billed, give both ends.
-    low = each turn bills only its new seconds; high = each turn bills the whole take so far."""
-    secs = [sg["seconds"] for sg in plan["segments"]]
-    vp = providers.video_provider("gemini-omni", s)
-    res = vp.resolution_for(s.resolution)
-    per_s = vp.price_per_s(res)
-    cumulative = sum(sum(secs[:i + 1]) for i in range(len(secs)))
-    return {"seconds": sum(secs), "turns": len(secs), "resolution": res,
-            "low_usd": round(per_s * sum(secs), 2), "high_usd": round(per_s * cumulative, 2)}
+def formats_view() -> list[dict]:
+    return [{"id": k, "label": v["label"], "blurb": v["blurb"], "empty_open": bool(v.get("empty_open"))}
+            for k, v in infl.FORMATS.items()]
 
 
 def video_view(iid: str, proj: pl.Project, full: bool = False) -> dict:
@@ -980,6 +973,12 @@ def video_view(iid: str, proj: pl.Project, full: bool = False) -> dict:
            "busy": proj.root.name in running_claims(inf_key(iid)),
            "updated": max(p.stat().st_mtime for p in (proj.plan_path, proj.root / "log.jsonl") if p.exists())}
     if full:
+        inf = the_influencers().get(iid)
+        opening_ok = infl.opening_ok(the_influencers(), iid, proj)
+        openings = {}
+        for view in infl.opening_views(plan):
+            path = infl.opening_path(proj, view)
+            openings[view] = lib_url(path) if path.exists() else None
         turns = []
         for t in takes:
             mp = t.with_suffix(".json")
@@ -990,7 +989,11 @@ def video_view(iid: str, proj: pl.Project, full: bool = False) -> dict:
         out.update({"caption": plan.get("caption", ""), "brief": plan.get("brief", {}),
                     "segments": plan["segments"], "turns": turns,
                     "extension_mode": plan.get("extension_mode"), "error": item_errors(proj).get("reel"),
-                    "costs": pl.project_costs(proj), "estimate": reel_estimate(current_settings(), plan)})
+                    "costs": pl.project_costs(proj),
+                    "setup": infl.setup_of(plan, inf["profile"]),
+                    "opening": openings, "opening_ok": opening_ok,
+                    "opening_error": item_errors(proj).get("opening"),
+                    "estimate": infl.estimate_usd(current_settings(), plan, needs_opening=not opening_ok)})
     return out
 
 
@@ -1019,6 +1022,13 @@ def influencer_view(inf: dict, full: bool = False) -> dict:
             "overridden": v in overrides,
         } for v, aspect, from_face, _ in infl.IDENTITY]
         out["identity_usd"] = identity_usd
+        out["places"] = [{
+            "id": x["id"], "name": x["name"], "description": x["description"],
+            "image": lib_url(x["image"]) if x["image"].exists() else None,
+            "status": "generating" if f"place:{x['id']}" in busy or (x["id"] == "home" and "setting" in busy)
+                      else ("done" if x["image"].exists() else "missing"),
+            "error": inf.get("place_errors", {}).get(x["id"]),
+        } for x in lib_.places(inf)]
         out["videos"] = [video_view(iid, v) for v in videos]
     return out
 
@@ -1029,7 +1039,7 @@ def list_influencers():
     return {"influencers": [influencer_view(i) for i in lib_.all()],
             "design_usd": log_usd(lib_.root / "design_log.jsonl"),
             "fields": [{"id": k, "label": label} for k, label in infl.PROFILE_FIELDS],
-            "formats": [{"id": k, "label": v["label"]} for k, v in infl.FORMATS.items()]}
+            "formats": formats_view()}
 
 
 class DesignIn(BaseModel):
@@ -1147,6 +1157,71 @@ def paint_identity(iid: str, body: IdentityIn):
     return submit("identity", f"Painting {name}", inf_key(iid), set(todo), run).view()
 
 
+class PlaceIn(BaseModel):
+    name: str
+    description: str
+
+
+def paint_place_job(iid: str, pid: str, name: str) -> dict:
+    s = current_settings()
+    lib_ = the_influencers()
+
+    def run(job: Job):
+        job.step("image", f"Painting {name}", record=False)
+        try:
+            infl.paint_place(client_for(s), s, lib_, iid, pid)
+            err = None
+        except Exception as e:
+            err = pl.friendly_error(e)
+            raise
+        finally:
+            with plan_lock(inf_key(iid)):
+                cur = lib_.get(iid)
+                errs = cur.setdefault("place_errors", {})
+                errs.pop(pid, None)
+                if err:
+                    errs[pid] = err
+                lib_.save(cur)
+        return {"place": pid}
+
+    claims = {f"place:{pid}"} | ({"setting"} if pid == "home" else set())
+    return submit("place", f"Painting {name}", inf_key(iid), claims, run).view()
+
+
+@app.post("/api/influencers/{iid}/places")
+def add_place(iid: str, body: PlaceIn):
+    """Save a place they film in, and paint it (an empty plate reused by every video there)."""
+    open_influencer(iid)
+    if not body.name.strip() or not body.description.strip():
+        raise HTTPException(400, "Give the place a name and describe it")
+    with plan_lock(inf_key(iid)):
+        place = the_influencers().add_place(iid, body.name, body.description)
+    return paint_place_job(iid, place["id"], place["name"])
+
+
+@app.post("/api/influencers/{iid}/places/{pid}/paint")
+def repaint_place(iid: str, pid: str):
+    inf = open_influencer(iid)
+    try:
+        place = the_influencers().place(inf, pid)
+    except KeyError:
+        raise HTTPException(404, f"No place {pid}")
+    return paint_place_job(iid, pid, place["name"])
+
+
+@app.delete("/api/influencers/{iid}/places/{pid}")
+def delete_place(iid: str, pid: str):
+    open_influencer(iid)
+    if f"place:{pid}" in running_claims(inf_key(iid)):
+        raise HTTPException(409, "This place is being painted. Wait for it to finish.")
+    try:
+        with plan_lock(inf_key(iid)):
+            the_influencers().remove_place(iid, pid)
+    except KeyError:
+        raise HTTPException(400 if pid == "home" else 404, "Home can't be removed" if pid == "home" else f"No place {pid}")
+    return {"ok": True}
+
+
 @app.delete("/api/influencers/{iid}")
 def delete_influencer(iid: str):
     """To the Recycle Bin, identity pack and videos included."""
@@ -1163,6 +1238,9 @@ class NewVideoIn(BaseModel):
     topic: str
     points: str = ""
     length_s: int = 30
+    place: str = ""                                  # a saved place id, or ""
+    location: str = ""                               # somewhere else, described
+    outfit: str = ""
 
 
 @app.post("/api/influencers/{iid}/videos")
@@ -1172,12 +1250,15 @@ def new_video(iid: str, body: NewVideoIn):
         raise HTTPException(400, f"Unknown format {body.format}")
     if not body.topic.strip():
         raise HTTPException(400, "What's the video about?")
+    if body.place and body.place not in {x["id"] for x in the_influencers().places(inf)}:
+        raise HTTPException(404, f"No place {body.place}")
     s = current_settings()
 
     def run(job: Job):
         job.step("script", f"Writing in {inf['profile']['name']}'s voice")
         proj = infl.write_script(client_for(s), s, the_influencers(), iid, body.format, body.topic.strip(),
-                                 body.points.strip(), body.length_s)
+                                 body.points.strip(), body.length_s, place=body.place,
+                                 location=body.location, outfit=body.outfit)
         job.log(f"Script: {proj.load_plan()['title']}")
         return {"video": proj.root.name}
 
@@ -1193,6 +1274,8 @@ class ScriptIn(BaseModel):
     title: str | None = None
     caption: str | None = None
     segments: list[dict] | None = None
+    format: str | None = None
+    setup: dict[str, str] | None = None
 
 
 @app.put("/api/influencers/{iid}/videos/{vid}")
@@ -1202,6 +1285,11 @@ def put_script(iid: str, vid: str, body: ScriptIn):
         raise HTTPException(409, "This video is being shot. Wait for it to finish.")
     if body.segments is not None and not 1 <= len(body.segments) <= 4:
         raise HTTPException(400, "A reel has 1 to 4 segments (10-40 s)")
+    if body.format is not None and body.format not in infl.FORMATS:
+        raise HTTPException(400, f"Unknown format {body.format}")
+    inf = open_influencer(iid)
+    if body.setup and body.setup.get("place") and body.setup["place"] not in {x["id"] for x in the_influencers().places(inf)}:
+        raise HTTPException(404, f"No place {body.setup['place']}")
 
     def apply(plan):
         if body.title is not None:
@@ -1217,9 +1305,38 @@ def put_script(iid: str, vid: str, body: ScriptIn):
             if segs[0]["lines"]:
                 plan["hook"] = segs[0]["lines"][0]
             plan.pop("prompt_overrides", None)       # prompts follow the new script
+        if body.format is not None:
+            plan["format"] = body.format
+        if body.setup is not None:
+            cur = infl.setup_of(plan, inf["profile"])
+            new = {k: str(body.setup.get(k, cur.get(k, ""))).strip() for k in (*infl.SETUP_KEYS, "place")}
+            if new["place"] and new["place"] != cur.get("place"):
+                new["location"] = the_influencers().place(inf, new["place"])["description"]
+            plan["setup"] = new
 
     update_plan(proj, apply)
     return video_view(iid, proj, full=True)
+
+
+@app.post("/api/influencers/{iid}/videos/{vid}/opening")
+def paint_opening(iid: str, vid: str):
+    """(Re)paint the still(s) this video starts from, to check the setup before shooting."""
+    open_influencer(iid)
+    proj = open_video(iid, vid)
+    if not the_influencers().image(iid, "face").exists():
+        raise HTTPException(400, "Paint the identity pack first (at least the face)")
+    s = current_settings()
+
+    def run(job: Job):
+        job.step("image", "Painting the opening frame", record=False)
+        try:
+            infl.paint_opening(client_for(s), s, the_influencers(), iid, proj)
+        except Exception as e:
+            record_failures(proj, {"opening": pl.friendly_error(e)})
+            raise
+        return {"video": vid}
+
+    return submit("opening", "Painting the opening frame", inf_key(iid), {vid}, run).view()
 
 
 @app.post("/api/influencers/{iid}/videos/{vid}/shoot")
@@ -1234,7 +1351,7 @@ def shoot_video(iid: str, vid: str):
 
     def run(job: Job):
         def step(kind, label, done, total):
-            job.step(kind, label, done, total, key=key if kind == "video" else kind)
+            job.step(kind, label, done, total, key=key if kind == "video" else kind, record=kind != "image")
         try:
             final = infl.shoot_reel(client_for(s), s, the_influencers(), iid, proj, log=job.log, step=step)
         except Exception as e:

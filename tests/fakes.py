@@ -67,6 +67,8 @@ FAKE_PROFILE = {
 FAKE_REEL = {
     "title": "Three-ingredient pancakes", "hook": "Okay so you only need three things.",
     "caption": "Broke-week breakfast #budget",
+    "setup": {"location": "a bright corner shop aisle", "outfit": "grey hoodie and jeans",
+              "position": "walking down the aisle", "light": "fluorescent shop light"},
     "segments": [
         {"id": "a", "seconds": 12, "lines": ["Okay so you only need three things."], "delivery": "excited",
          "action": "holds up an egg"},

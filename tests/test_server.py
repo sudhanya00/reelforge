@@ -351,7 +351,8 @@ def test_influencer_design_create_paint_script_shoot(api, fake, monkeypatch):
     video = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
     assert [sg["id"] for sg in video["segments"]] == ["p1", "p2"]
     est = video["estimate"]
-    assert est["turns"] == 2 and est["high_usd"] > est["low_usd"] > 0
+    assert est["turns"] == 2 and est["usd"] == round(est["video_usd"] + est["images_usd"], 2) and est["images_usd"] > 0
+    assert video["setup"]["location"] == "a bright corner shop aisle" and not video["opening_ok"]
 
     # edit the script: three segments now
     segs = video["segments"] + [{"lines": ["Bye!"], "delivery": "warm", "action": "waves"}]
@@ -387,3 +388,39 @@ def test_influencer_shoot_needs_identity_and_records_failures(api, fake):
     assert api.get(f"/api/influencers/{iid}/videos/{vid}").json()["error"]
     assert api.get("/api/influencers/nobody").status_code == 404
     assert api.get(f"/api/influencers/{iid}/videos/..%2F..").status_code == 404
+
+
+def test_influencer_places_setups_and_opening(api, fake):
+    iid = api.post("/api/influencers", json={"profile": {"name": "Ana", "setting": "a tiny flat"}}).json()["id"]
+    places = api.get(f"/api/influencers/{iid}").json()["places"]
+    assert [(x["id"], x["status"]) for x in places] == [("home", "missing")]
+    assert api.post(f"/api/influencers/{iid}/places", json={"name": "Club", "description": ""}).status_code == 400
+    j = wait(api, api.post(f"/api/influencers/{iid}/places", json={"name": "Club", "description": "neon club"}).json())
+    assert j["status"] == "done", j
+    places = api.get(f"/api/influencers/{iid}").json()["places"]
+    assert places[1]["id"] == "club" and places[1]["image"]
+    assert api.delete(f"/api/influencers/{iid}/places/home").status_code == 400
+
+    body = {"topic": "night out", "length_s": 10, "format": "mirror", "place": "club", "outfit": "sequin dress"}
+    assert api.post(f"/api/influencers/{iid}/videos", json={**body, "place": "moon"}).status_code == 404
+    vid = wait(api, api.post(f"/api/influencers/{iid}/videos", json=body).json())["result"]["video"]
+    v = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
+    assert v["format"] == "mirror" and v["setup"]["place"] == "club" and v["setup"]["outfit"] == "sequin dress"
+    assert v["setup"]["location"] == "neon club" and v["opening"] == {"opening": None}
+
+    # the opening frame needs the face
+    assert api.post(f"/api/influencers/{iid}/videos/{vid}/opening").status_code == 400
+    wait(api, api.post(f"/api/influencers/{iid}/identity", json={"views": ["face"]}).json())
+    j = wait(api, api.post(f"/api/influencers/{iid}/videos/{vid}/opening").json())
+    assert j["status"] == "done", j
+    v = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
+    assert v["opening_ok"] and v["opening"]["opening"] and v["estimate"]["images_usd"] == 0
+
+    # switching to a walk-in with a new outfit: two stills, and the old one is out of date
+    v = api.put(f"/api/influencers/{iid}/videos/{vid}",
+                json={"format": "walk_in", "setup": {"outfit": "black blazer", "place": "home"}}).json()
+    assert v["format"] == "walk_in" and v["setup"]["location"] == "a tiny flat" and v["setup"]["outfit"] == "black blazer"
+    assert not v["opening_ok"] and set(v["opening"]) == {"opening", "look"}
+    assert api.put(f"/api/influencers/{iid}/videos/{vid}", json={"format": "yodel"}).status_code == 400
+    lst = api.get("/api/influencers").json()
+    assert [f["id"] for f in lst["formats"]][:2] == ["talking_head", "propped"]
