@@ -4,17 +4,123 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowUp, Check, Clapperboard, Copy, Info, Megaphone, Plus, Trash2, TriangleAlert, Video as VideoIcon, Wand2, X } from "lucide-react";
+import { Armchair, ArrowUp, Check, Copy, DoorOpen, Footprints, ImageIcon, Info, MapPin, Megaphone, Mic, Plus, RefreshCw, Shirt, Smartphone, Sparkles, Trash2, TriangleAlert, Video as VideoIcon, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, InlineText, Input, Label, LiveBars, Segmented, Spinner, Textarea, Tip } from "@/components/ui/primitives";
 import { useConfirm, useConfirmSpend } from "@/components/confirm";
 import { JobProgress } from "@/components/progress";
 import { useRoute } from "@/components/shell";
-import { infKey, useAppState, useJobs, useVideo } from "@/lib/hooks";
-import { api, url, type Influencer, type Job, type Resolution, type Segment, type Video, type VideoSummary } from "@/lib/api";
+import { infKey, useAppState, useInfluencers, useJobs, useVideo } from "@/lib/hooks";
+import { api, url, type Format, type Influencer, type Job, type Resolution, type Segment, type Setup, type Video, type VideoSummary } from "@/lib/api";
 import { ago, cn, usd } from "@/lib/utils";
 
 const LENGTHS = [10, 20, 30, 40] as const;
+
+const FORMAT_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  talking_head: Smartphone,
+  propped: Armchair,
+  walk_and_talk: Footprints,
+  mirror: Shirt,
+  walk_in: DoorOpen,
+  podcast: Mic,
+};
+
+const ACTION_HINT: Record<string, string> = {
+  talking_head: "leans into the lens",
+  propped: "pulls a knee up onto the chair",
+  walk_and_talk: "glances ahead, steps around someone",
+  mirror: "turns to show the back of the outfit",
+  walk_in: "walks in from the left, drops a bag",
+  podcast: "leans into the mic",
+};
+
+function useFormats(): Format[] {
+  const { data } = useInfluencers();
+  return data?.formats ?? [];
+}
+
+function FormatPicker({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const formats = useFormats();
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {formats.map((f) => {
+        const Icon = FORMAT_ICON[f.id] ?? VideoIcon;
+        const on = f.id === value;
+        return (
+          <button
+            key={f.id}
+            disabled={disabled}
+            onClick={() => onChange(f.id)}
+            className={cn(
+              "flex items-start gap-2.5 rounded-xl border p-2.5 text-left transition-colors disabled:opacity-50",
+              on ? "border-foreground/40 bg-accent" : "hover:border-foreground/25 hover:bg-accent/40",
+            )}
+          >
+            <Icon className={cn("mt-0.5 size-4 shrink-0", on ? "text-foreground" : "text-muted-foreground")} />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium leading-tight">{f.label}</span>
+              <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{f.blurb}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Saved places as chips, plus "somewhere else" (a description). `place` "" = somewhere else. */
+function WherePicker({
+  inf,
+  place,
+  location,
+  onChange,
+  allowAuto,
+  disabled,
+}: {
+  inf: Influencer;
+  place: string | null;
+  location: string;
+  onChange: (place: string | null, location: string) => void;
+  allowAuto?: boolean;
+  disabled?: boolean;
+}) {
+  const chip = (on: boolean) =>
+    cn(
+      "flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50",
+      on ? "border-foreground/30 bg-foreground text-background" : "text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+    );
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {allowAuto && (
+          <button disabled={disabled} className={chip(place === null)} onClick={() => onChange(null, "")}>
+            <Sparkles className="size-3" />
+            AI picks
+          </button>
+        )}
+        {inf.places.map((p) => (
+          <button key={p.id} disabled={disabled} className={chip(place === p.id)} onClick={() => onChange(p.id, p.description)}>
+            <MapPin className="size-3" />
+            {p.name}
+          </button>
+        ))}
+        <button disabled={disabled} className={chip(place === "")} onClick={() => onChange("", place ? "" : location)}>
+          Somewhere else
+        </button>
+      </div>
+      {place === "" && (
+        <Textarea
+          value={location}
+          disabled={disabled}
+          onChange={(e) => onChange("", e.target.value)}
+          placeholder="e.g. a busy supermarket aisle, cereal boxes and fluorescent light"
+          className="min-h-9"
+          rows={1}
+        />
+      )}
+    </div>
+  );
+}
 
 export function VideosTab({ inf }: { inf: Influencer }) {
   const { video, goInf } = useRoute();
@@ -87,6 +193,10 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
   const [topic, setTopic] = React.useState("");
   const [points, setPoints] = React.useState("");
   const [length, setLength] = React.useState<number>(30);
+  const [format, setFormat] = React.useState("talking_head");
+  const [place, setPlace] = React.useState<string | null>(null);      // null: AI picks
+  const [location, setLocation] = React.useState("");
+  const [outfit, setOutfit] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [jobId, setJobId] = React.useState<string | null>(null);
   const { jobs } = useJobs();
@@ -105,7 +215,10 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
     if (!topic.trim() || submitting) return;
     setSubmitting(true);
     try {
-      const j = await api.newVideo(inf.id, { format: "talking_head", topic, points, length_s: length });
+      const j = await api.newVideo(inf.id, {
+        format, topic, points, length_s: length,
+        place: place ?? "", location: place === "" ? location : "", outfit,
+      });
       setJobId(j.id);
       mutate("/api/jobs");
       setTopic("");
@@ -119,18 +232,23 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
 
   return (
     <div className="mx-auto max-w-2xl pt-6">
-      <h2 className="text-2xl font-semibold tracking-tight">What should {p.name} talk about?</h2>
+      <h2 className="text-2xl font-semibold tracking-tight">What should {p.name} post?</h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        A talking-head vlog: one continuous selfie take, straight to camera. AI drafts the script in their voice; you edit it before anything is shot.
+        Pick how it&apos;s filmed and what it&apos;s about. AI drafts the script in their voice and sets the scene (where, what they wear); you edit both before anything is shot.
       </p>
-      <div className="mt-6 rounded-2xl border bg-card shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_32px_-12px_rgba(0,0,0,0.12)] focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_40px_-12px_rgba(0,0,0,0.2)] dark:shadow-none">
+
+      <div className="mt-6">
+        <FormatPicker value={format} onChange={setFormat} />
+      </div>
+
+      <div className="mt-4 rounded-2xl border bg-card shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_32px_-12px_rgba(0,0,0,0.12)] focus-within:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_12px_40px_-12px_rgba(0,0,0,0.2)] dark:shadow-none">
         <textarea
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && submit()}
           autoFocus
           rows={2}
-          placeholder={`e.g. ${p.niche ? `a ${p.niche} tip most people get wrong` : "the one habit that changed my mornings"}`}
+          placeholder={`e.g. ${p.niche ? `a ${p.niche.split(/[,.]/)[0].toLowerCase()} thing most people get wrong` : "the one habit that changed my mornings"}`}
           className="block w-full resize-none bg-transparent px-5 pt-5 pb-2 text-[15px] leading-relaxed outline-none field-sizing-content placeholder:text-muted-foreground/60"
         />
         <div className="px-5 pb-3">
@@ -142,13 +260,28 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
             className="h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
           />
         </div>
+        <div className="space-y-3 border-t px-5 py-4">
+          <div className="grid gap-1.5 sm:grid-cols-[80px_1fr] sm:items-start">
+            <Label className="pt-1.5">Where</Label>
+            <WherePicker inf={inf} place={place} location={location} allowAuto onChange={(pl, loc) => (setPlace(pl), setLocation(loc))} />
+          </div>
+          <div className="grid gap-1.5 sm:grid-cols-[80px_1fr] sm:items-center">
+            <Label>Wearing</Label>
+            <div className="flex items-center gap-2">
+              <Input value={outfit} onChange={(e) => setOutfit(e.target.value)} placeholder="AI picks something that fits, or describe it" className="h-8" />
+              {p.outfit && (
+                <Tip content={p.outfit}>
+                  <button onClick={() => setOutfit(outfit === p.outfit ? "" : p.outfit)} className={cn("shrink-0 rounded-full border px-2.5 py-1 text-xs", outfit === p.outfit ? "border-foreground/30 bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}>
+                    Go-to outfit
+                  </button>
+                </Tip>
+              )}
+            </div>
+          </div>
+        </div>
         <div className="flex flex-wrap items-center gap-2 border-t px-3 py-3">
-          <Badge tone="outline" className="h-7 px-3 text-xs">
-            <Clapperboard />
-            Talking-head vlog
-          </Badge>
           <Segmented<string> size="sm" value={String(length)} onChange={(v) => setLength(Number(v))} options={LENGTHS.map((l) => ({ value: String(l), label: `${l}s` }))} />
-          <Button size="sm" shape="pill" className="ml-auto pr-2" disabled={!topic.trim() || submitting || busy} onClick={submit}>
+          <Button size="sm" shape="pill" className="ml-auto pr-2" disabled={!topic.trim() || submitting || busy || (place === "" && !location.trim())} onClick={submit}>
             Write the script
             <span className="flex size-5 items-center justify-center rounded-full bg-primary-foreground/15">
               <ArrowUp className="size-3" />
@@ -157,7 +290,7 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
         </div>
       </div>
       <p className="mt-3 px-1 text-xs text-muted-foreground">
-        Scripts cost about $0.02. Each 10 s is one segment: the first is shot with the identity pack, the rest extend the same take.
+        Scripts cost about $0.02. Before shooting, an opening frame (≈$0.13) shows the setup; the video starts from it, and each 10 s after the first extends the same take.
       </p>
     </div>
   );
@@ -165,7 +298,9 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
 
 // ---------------------------------------------------------------- script + shoot
 
-type Draft = { title: string; caption: string; segments: Segment[] };
+type Draft = { title: string; caption: string; segments: Segment[]; format: string; setup: Setup };
+
+const draftOf = (v: Video): Draft => ({ title: v.title, caption: v.caption, segments: v.segments, format: v.format, setup: v.setup });
 
 function VideoEditor({ inf, vid }: { inf: Influencer; vid: string }) {
   const { data: v, mutate } = useVideo(inf.id, vid);
@@ -175,12 +310,12 @@ function VideoEditor({ inf, vid }: { inf: Influencer; vid: string }) {
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
-    if (v && !draft) setDraft({ title: v.title, caption: v.caption, segments: v.segments });
+    if (v && !draft) setDraft(draftOf(v));
   }, [v, draft]);
 
   if (!v || !draft) return <Spinner className="mx-auto mt-24 text-muted-foreground" />;
 
-  const dirty = draft.title !== v.title || draft.caption !== v.caption || JSON.stringify(draft.segments) !== JSON.stringify(v.segments);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(v));
   const locked = !!job || v.busy;
 
   const save = async (): Promise<Video | null> => {
@@ -188,7 +323,7 @@ function VideoEditor({ inf, vid }: { inf: Influencer; vid: string }) {
     try {
       const next = await api.saveScript(inf.id, vid, draft);
       mutate(next, { revalidate: false });
-      setDraft({ title: next.title, caption: next.caption, segments: next.segments });
+      setDraft(draftOf(next));
       return next;
     } catch (e) {
       toast.error("Couldn't save", { description: (e as Error).message });
@@ -212,12 +347,15 @@ function VideoEditor({ inf, vid }: { inf: Influencer; vid: string }) {
           </p>
         </div>
 
+        <SetupCard inf={inf} draft={draft} setDraft={setDraft} locked={locked} />
+
         <div className="space-y-3">
           {draft.segments.map((s, i) => (
             <SegmentCard
               key={i}
               s={s}
               index={i}
+              format={draft.format}
               locked={locked}
               onChange={(patch) => setSeg(i, patch)}
               onRemove={draft.segments.length > 1 ? () => setDraft({ ...draft, segments: draft.segments.filter((_, k) => k !== i) }) : undefined}
@@ -240,7 +378,7 @@ function VideoEditor({ inf, vid }: { inf: Influencer; vid: string }) {
           {dirty && !locked && (
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} className="sticky bottom-4 flex items-center gap-2 rounded-full border bg-background/90 p-1.5 pl-4 shadow-lg backdrop-blur">
               <span className="text-sm text-muted-foreground">Unsaved script changes</span>
-              <Button variant="ghost" size="sm" shape="pill" className="ml-auto" onClick={() => setDraft({ title: v.title, caption: v.caption, segments: v.segments })}>
+              <Button variant="ghost" size="sm" shape="pill" className="ml-auto" onClick={() => setDraft(draftOf(v))}>
                 Discard
               </Button>
               <Button size="sm" shape="pill" onClick={save} disabled={saving}>
@@ -256,7 +394,39 @@ function VideoEditor({ inf, vid }: { inf: Influencer; vid: string }) {
   );
 }
 
-function SegmentCard({ s, index, locked, onChange, onRemove }: { s: Segment; index: number; locked: boolean; onChange: (p: Partial<Segment>) => void; onRemove?: () => void }) {
+function SetupCard({ inf, draft, setDraft, locked }: { inf: Influencer; draft: Draft; setDraft: (d: Draft) => void; locked: boolean }) {
+  const set = (patch: Partial<Setup>) => setDraft({ ...draft, setup: { ...draft.setup, ...patch } });
+  return (
+    <div className="space-y-4 rounded-xl border bg-card p-4">
+      <div className="flex items-baseline gap-2">
+        <h3 className="text-sm font-semibold">Setup</h3>
+        <span className="text-xs text-muted-foreground">How it&apos;s filmed, where, and what they&apos;re wearing today.</span>
+      </div>
+      <FormatPicker value={draft.format} onChange={(f) => setDraft({ ...draft, format: f })} disabled={locked} />
+      <div className="space-y-1.5">
+        <Label>Where</Label>
+        <WherePicker inf={inf} place={draft.setup.place} location={draft.setup.location} disabled={locked} onChange={(place, location) => set({ place: place ?? "", location })} />
+        {draft.setup.place !== "" && <p className="text-xs text-muted-foreground">{draft.setup.location}</p>}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label>Wearing</Label>
+          <Input value={draft.setup.outfit} disabled={locked} onChange={(e) => set({ outfit: e.target.value })} placeholder="e.g. black satin slip dress, silver hoops" className="h-8" />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Position</Label>
+          <Input value={draft.setup.position} disabled={locked} onChange={(e) => set({ position: e.target.value })} placeholder="e.g. sitting cross-legged on the bed" className="h-8" />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Light</Label>
+          <Input value={draft.setup.light} disabled={locked} onChange={(e) => set({ light: e.target.value })} placeholder="e.g. golden hour through the window" className="h-8" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SegmentCard({ s, index, format, locked, onChange, onRemove }: { s: Segment; index: number; format: string; locked: boolean; onChange: (p: Partial<Segment>) => void; onRemove?: () => void }) {
   const words = s.lines.join(" ").split(/\s+/).filter(Boolean).length;
   const tooLong = words > 28;
   return (
@@ -265,7 +435,7 @@ function SegmentCard({ s, index, locked, onChange, onRemove }: { s: Segment; ind
         <span className="rounded-full bg-muted px-2 py-0.5 font-medium tabular">
           {index * 10}–{index * 10 + 10}s
         </span>
-        <span>{index === 0 ? "Shot with the identity pack" : "Extends the same take"}</span>
+        <span>{index === 0 ? "Starts from the opening frame" : "Extends the same take"}</span>
         <span className={cn("ml-auto tabular", tooLong && "text-live")}>
           {words} words{tooLong && " · may not fit in 10 s"}
         </span>
@@ -291,7 +461,7 @@ function SegmentCard({ s, index, locked, onChange, onRemove }: { s: Segment; ind
         </div>
         <div className="space-y-1">
           <Label>Action</Label>
-          <Input value={s.action} onChange={(e) => onChange({ action: e.target.value })} disabled={locked} placeholder="leans into the lens" className="h-8" />
+          <Input value={s.action} onChange={(e) => onChange({ action: e.target.value })} disabled={locked} placeholder={ACTION_HINT[format] ?? "leans into the lens"} className="h-8" />
         </div>
       </div>
     </div>
@@ -335,9 +505,22 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
   const confirm = useConfirmSpend();
   const confirmPlain = useConfirm();
   const [playing, setPlaying] = React.useState<string | null>(null);
+  const { running } = useJobs();
   const hasFace = !!inf.face;
   const est = v.estimate;
   const src = playing ?? v.final ?? v.turns.at(-1)?.url ?? null;
+  const painting = running.find((j) => j.project === infKey(inf.id) && j.kind === "opening" && j.claims.includes(v.id));
+
+  const paintOpening = async () => {
+    if (dirty && !(await save())) return;
+    try {
+      await api.paintOpening(inf.id, v.id);
+      mutate("/api/jobs");
+      mutate(`/api/influencers/${inf.id}/videos/${v.id}`);
+    } catch (err) {
+      toast.error("Couldn't start", { description: (err as Error).message });
+    }
+  };
 
   const shoot = async () => {
     let cur = v;
@@ -349,8 +532,8 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
     const e = cur.estimate;
     const ok = await confirm({
       title: `Shoot ${cur.seconds}s of ${inf.profile.name}?`,
-      usd: e.high_usd,
-      detail: `${e.turns} turn${e.turns === 1 ? "" : "s"} at ${e.resolution}: ${usd(e.low_usd)} if each extension bills only its new seconds, up to ${usd(e.high_usd)} if it bills the whole take so far.`,
+      usd: e.usd,
+      detail: `${e.turns} turn${e.turns === 1 ? "" : "s"} at ${e.resolution} (${usd(e.video_usd)})${e.images_usd ? `, plus ${usd(e.images_usd)} to paint the opening frame first` : ""}.`,
       action: "Shoot",
     });
     if (!ok) return;
@@ -389,12 +572,21 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
             <LiveBars className="h-5" />
             <JobProgress job={job} showLabel className="text-white" />
           </div>
+        ) : painting ? (
+          <div className="flex size-full flex-col items-center justify-center gap-4 p-6 text-white">
+            <LiveBars className="h-5" />
+            <JobProgress job={painting} showLabel className="text-white" />
+          </div>
         ) : src ? (
           <video key={src} src={url(src)} controls playsInline className="size-full object-cover" poster={!playing && v.poster ? url(v.poster) : undefined} />
+        ) : v.opening.opening ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url(v.opening.opening)} alt="Opening frame" className={cn("size-full object-cover", !v.opening_ok && "opacity-50")} />
         ) : (
           <div className="flex size-full flex-col items-center justify-center gap-2 p-6 text-center text-white/60">
             <VideoIcon className="size-7" />
             <p className="text-sm">Not shot yet</p>
+            <p className="text-xs">Paint the opening frame to preview the setup.</p>
           </div>
         )}
       </div>
@@ -404,6 +596,10 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
           {v.error}
         </p>
+      )}
+
+      {!job && (
+        <Openings v={v} busy={!!painting} disabled={!hasFace} onPaint={paintOpening} />
       )}
 
       {!job && (
@@ -419,12 +615,10 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
               />
             </div>
           )}
-          <Button className="w-full" shape="pill" onClick={shoot} disabled={!hasFace || !v.segments.length}>
+          <Button className="w-full" shape="pill" onClick={shoot} disabled={!hasFace || !v.segments.length || !!painting}>
             <Wand2 />
             {v.final ? "Shoot again" : "Shoot"}
-            <span className="text-primary-foreground/70 tabular">
-              {usd(est.low_usd)}–{usd(est.high_usd)}
-            </span>
+            <span className="text-primary-foreground/70 tabular">{usd(est.usd)}</span>
           </Button>
           {!hasFace ? (
             <p className="text-center text-xs text-muted-foreground">
@@ -436,7 +630,9 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
           ) : (
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" />
-              The price is a range until the first real run shows whether extensions bill only their new seconds.
+              {est.images_usd
+                ? `Includes ${usd(est.images_usd)} to paint the opening frame${v.opening.opening ? " again: the setup changed" : ""}.`
+                : "Starts from the opening frame above."}
             </p>
           )}
         </div>
@@ -470,6 +666,44 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
         </Tip>
       </div>
     </aside>
+  );
+}
+
+function Openings({ v, busy, disabled, onPaint }: { v: Video; busy: boolean; disabled: boolean; onPaint: () => void }) {
+  const views = Object.entries(v.opening) as [string, string | null][];
+  const any = views.some(([, u]) => u);
+  return (
+    <div className="space-y-2 rounded-xl border p-3">
+      <div className="flex items-center gap-2 text-xs">
+        <ImageIcon className="size-3.5 text-muted-foreground" />
+        <span className="font-medium">Opening frame</span>
+        {any && !v.opening_ok && <Badge tone="live">setup changed</Badge>}
+        <Button variant="ghost" size="sm" shape="pill" className="-my-1 ml-auto h-7 text-xs" onClick={onPaint} disabled={busy || disabled}>
+          {any ? <RefreshCw /> : <Wand2 />}
+          {any ? "Repaint" : "Paint"}
+          {!v.opening_ok && <span className="tabular text-muted-foreground">{usd(v.estimate.images_usd)}</span>}
+        </Button>
+      </div>
+      {any && (
+        <div className="flex gap-2">
+          {views.map(([k, u]) =>
+            u ? (
+              <a key={k} href={url(u)} target="_blank" rel="noreferrer" className="block w-16 overflow-hidden rounded-md border">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url(u)} alt={k} className={cn("aspect-[9/16] w-full object-cover", !v.opening_ok && "opacity-50")} />
+              </a>
+            ) : null,
+          )}
+          {views.length > 1 && <p className="self-end text-[11px] leading-snug text-muted-foreground">The empty place they walk into, and their outfit.</p>}
+        </div>
+      )}
+      {v.opening_error && (
+        <p className="flex items-start gap-1.5 text-xs text-destructive">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          {v.opening_error}
+        </p>
+      )}
+    </div>
   );
 }
 

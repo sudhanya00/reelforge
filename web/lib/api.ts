@@ -219,7 +219,7 @@ export interface Project {
 export interface Job {
   id: string;
   kind: "plan" | "film" | "assets" | "take" | "edit" | "produce" | "stitch" | "review" | "direct"
-    | "design" | "identity" | "script" | "reel";
+    | "design" | "identity" | "script" | "reel" | "place" | "opening";
   label: string;
   project: string | null;
   claims: string[];
@@ -302,6 +302,30 @@ export interface Turn {
   extends: string | null;
 }
 
+export interface Setup {
+  place: string;
+  location: string;
+  outfit: string;
+  position: string;
+  light: string;
+}
+
+export interface Place {
+  id: string;
+  name: string;
+  description: string;
+  image: string | null;
+  status: "generating" | "done" | "missing";
+  error: string | null;
+}
+
+export interface Format {
+  id: string;
+  label: string;
+  blurb: string;
+  empty_open: boolean;
+}
+
 export interface Video extends VideoSummary {
   caption: string;
   brief: { topic?: string; points?: string; length_s?: number };
@@ -310,12 +334,17 @@ export interface Video extends VideoSummary {
   extension_mode: "cumulative" | "segments" | null;
   error: string | null;
   costs: { usd: number; calls: number };
-  estimate: { seconds: number; turns: number; resolution: Resolution; low_usd: number; high_usd: number };
+  setup: Setup;
+  opening: { opening?: string | null; look?: string | null };
+  opening_ok: boolean;
+  opening_error: string | null;
+  estimate: { seconds: number; turns: number; resolution: Resolution; video_usd: number; images_usd: number; usd: number };
 }
 
 export interface Influencer extends InfluencerSummary {
   identity: IdentityImage[];
   identity_usd: number;
+  places: Place[];
   videos: VideoSummary[];
 }
 
@@ -323,7 +352,7 @@ export interface InfluencerList {
   influencers: InfluencerSummary[];
   design_usd: number;
   fields: { id: ProfileKey; label: string }[];
-  formats: { id: string; label: string }[];
+  formats: Format[];
 }
 
 export class ApiError extends Error {}
@@ -384,10 +413,14 @@ export const api = {
     call<Job>("POST", `/api/influencers/${id}/identity`, { views: views ?? null, force }),
   setIdentityPrompt: (id: string, view: IdentityView, prompt: string | null) =>
     call<Influencer>("PUT", `/api/influencers/${id}/identity/prompt`, { view, prompt }),
-  newVideo: (id: string, b: { format: string; topic: string; points: string; length_s: number }) =>
+  newVideo: (id: string, b: { format: string; topic: string; points: string; length_s: number; place: string; location: string; outfit: string }) =>
     call<Job>("POST", `/api/influencers/${id}/videos`, b),
-  saveScript: (id: string, vid: string, b: { title?: string; caption?: string; segments?: Partial<Segment>[] }) =>
+  saveScript: (id: string, vid: string, b: { title?: string; caption?: string; segments?: Partial<Segment>[]; format?: string; setup?: Partial<Setup> }) =>
     call<Video>("PUT", `/api/influencers/${id}/videos/${vid}`, b),
+  paintOpening: (id: string, vid: string) => call<Job>("POST", `/api/influencers/${id}/videos/${vid}/opening`),
+  addPlace: (id: string, name: string, description: string) => call<Job>("POST", `/api/influencers/${id}/places`, { name, description }),
+  repaintPlace: (id: string, pid: string) => call<Job>("POST", `/api/influencers/${id}/places/${pid}/paint`),
+  deletePlace: (id: string, pid: string) => call<{ ok: boolean }>("DELETE", `/api/influencers/${id}/places/${pid}`),
   shootVideo: (id: string, vid: string) => call<Job>("POST", `/api/influencers/${id}/videos/${vid}/shoot`),
   deleteVideo: (id: string, vid: string) => call<{ ok: boolean }>("DELETE", `/api/influencers/${id}/videos/${vid}`),
   deleteProject: (id: string) => call<{ ok: boolean; moved_to: string }>("DELETE", `/api/projects/${id}`),

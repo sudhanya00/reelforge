@@ -54,12 +54,16 @@ references failed is skipped rather than shot without them.
 
 ## Influencers
 Switch to **Influencers** in the top bar. Design a fictional creator (look, persona, voice,
-the room they film in); AI fills whatever you leave empty. Paint their **identity pack**
-(face first, then three-quarter, profile, full body and the empty room, all raw and
-unretouched). In **Videos**, describe a topic: AI drafts a talking-head script in their
-voice, split into 10 s segments that you edit. **Shoot** makes one continuous selfie take:
-the first segment carries the identity pack, and each later one extends the same take
-with Gemini Omni (up to 40 s). Stored under `library/influencers/<id>/`.
+home); AI fills whatever you leave empty. Paint their **identity pack** (face first, then
+three-quarter, profile, full body and home, all raw and unretouched) and add **places**
+they film in more than once (gym, café, car...).
+
+Each video has its own **setup**: a format (selfie talking head, propped-up phone, walk and
+talk, mirror, walk into frame, podcast), where, what they wear, their position and the light.
+AI proposes it with the script, in their voice, split into 10 s segments; you edit both.
+An **opening frame** (one image, two for walk-ins) is painted from the identity pack for the
+setup; **Shoot** starts the video from it and extends the same take with Gemini Omni, 10 s
+at a time, up to 40 s. Stored under `library/influencers/<id>/`.
 
 ## Costs
 Every generation call logs its token usage and an estimated `cost_usd` to `log.jsonl`

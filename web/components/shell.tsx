@@ -288,7 +288,8 @@ function JobsButton() {
   const { jobs, running } = useJobs();
   const { go, goInf } = useRoute();
   const open = (j: Job) => {
-    if (j.project?.startsWith("inf:")) goInf(j.project.slice(4), j.kind === "identity" ? "identity" : "videos", j.kind === "reel" ? j.claims[0] : undefined);
+    if (j.project?.startsWith("inf:"))
+      goInf(j.project.slice(4), j.kind === "identity" || j.kind === "place" ? "identity" : "videos", j.kind === "reel" || j.kind === "opening" ? j.claims[0] : undefined);
     else if (j.project) go(j.project, tabFor(j));
   };
   return (

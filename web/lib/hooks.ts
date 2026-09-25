@@ -94,8 +94,8 @@ export function useJobWatcher(
         mutate((key) => typeof key === "string" && key.startsWith("/api/influencers"));
         if (j.kind === "design") continue; // the designer shows its own result
         const iid = j.project!.slice(4);
-        const tab = j.kind === "identity" ? "identity" : "videos";
-        const video = j.kind === "script" ? (j.result?.video as string | undefined) : j.kind === "reel" ? j.claims[0] : undefined;
+        const tab = j.kind === "identity" || j.kind === "place" ? "identity" : "videos";
+        const video = j.kind === "script" ? (j.result?.video as string | undefined) : j.kind === "reel" || j.kind === "opening" ? j.claims[0] : undefined;
         if (j.status === "done") {
           toast.success(doneMessage(j), { action: { label: "Open", onClick: () => onOpenInfluencer(iid, tab, video) } });
         } else {
@@ -134,6 +134,8 @@ function doneMessage(j: Job) {
     case "identity": return j.label.replace("Painting", "Painted");
     case "script": return "The script is ready to edit";
     case "reel": return j.label.replace("Shooting", "Finished shooting");
+    case "place": return j.label.replace("Painting", "Painted");
+    case "opening": return "The opening frame is ready";
   }
 }
 

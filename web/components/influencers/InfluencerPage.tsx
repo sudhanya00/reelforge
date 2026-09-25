@@ -14,6 +14,7 @@ import { imageUsd, infKey, useAppState, useInfluencer, useJobs } from "@/lib/hoo
 import { api, url, type IdentityImage, type IdentityView, type Influencer } from "@/lib/api";
 import { cn, usd } from "@/lib/utils";
 import { Designer } from "./Designer";
+import { PlacesSection } from "./Places";
 import { VideosTab } from "./Videos";
 
 export function InfluencerPage({ id }: { id: string }) {
@@ -30,8 +31,8 @@ const VIEW_LABEL: Record<IdentityView, [string, string]> = {
   face: ["Face", "Front-camera selfie. Everything else is painted from this."],
   three_quarter: ["Three-quarter", "Same face, turned. Helps the video model hold identity when they move."],
   profile: ["Profile", "Side view, for head turns."],
-  full_body: ["Full body", "Build and signature outfit."],
-  setting: ["Where they film", "The room, empty, from where the phone usually is."],
+  full_body: ["Full body", "Build and proportions. Outfits change per video."],
+  setting: ["Home", "Their place, empty. Also the first of their saved places."],
 };
 
 function useIdentityJob(id: string) {
@@ -110,11 +111,11 @@ function IdentityTab({ inf }: { inf: Influencer }) {
             [
               ["Who", [p.age && `${p.age}`, p.ethnicity, p.gender].filter(Boolean).join(", ")],
               ["Look", [p.hair, p.body, p.features].filter(Boolean).join("; ")],
-              ["Wears", p.outfit],
+              ["Style", [p.style, p.outfit && `usually ${p.outfit}`].filter(Boolean).join("; ")],
               ["Personality", p.persona],
               ["Talks", p.speech],
               ["Voice", p.voice],
-              ["Films in", p.setting],
+              ["Home", p.setting],
             ] as [string, string][]
           )
             .filter(([, v]) => v)
@@ -168,6 +169,7 @@ function IdentityTab({ inf }: { inf: Influencer }) {
             <IdentityCard key={v.view} inf={inf} v={v} index={i} canPaint={!job && (!v.from_face || hasFace)} onRepaint={() => repaint(v.view)} onPaint={() => paint([v.view])} />
           ))}
         </div>
+        <PlacesSection inf={inf} />
       </section>
 
       <Designer open={editing} onOpenChange={setEditing} initial={inf.profile} id={inf.id} />

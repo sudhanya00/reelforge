@@ -38,10 +38,10 @@ const SECTIONS: { title: string; hint: string; fields: Field[] }[] = [
   },
   {
     title: "Style",
-    hint: "",
+    hint: "Each video picks its own outfit; this is their taste and everyday default.",
     fields: [
       { key: "style", label: "Fashion style", placeholder: "thrifted casual, earth tones" },
-      { key: "outfit", label: "Signature outfit", placeholder: "oversized olive knit cardigan over a white tee", long: true },
+      { key: "outfit", label: "Go-to outfit", placeholder: "oversized olive knit cardigan over a white tee", long: true },
     ],
   },
   {
@@ -58,9 +58,9 @@ const SECTIONS: { title: string; hint: string; fields: Field[] }[] = [
     ],
   },
   {
-    title: "Where they film",
-    hint: "One real, lived-in place, used as the backdrop of every video.",
-    fields: [{ key: "setting", label: "Setting", placeholder: "a small studio-apartment kitchen: green kettle, fairy lights, plants on the sill", long: true }],
+    title: "Home",
+    hint: "Their place, for at-home videos. Add other places (gym, café, car…) later.",
+    fields: [{ key: "setting", label: "Home", placeholder: "a small studio-apartment kitchen: green kettle, fairy lights, plants on the sill", long: true }],
   },
 ];
 
