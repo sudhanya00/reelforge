@@ -758,8 +758,8 @@ def produce(client, s: Settings, proj: Project, log=print, step=None) -> dict:
     """Make everything the film still needs: missing references, one take for each scene
     that has none, then the final cut. Finished work is skipped, so re-running resumes an
     interrupted or failed run. Returns {"failed": {id: why}, "final": Path | None}.
-    step(kind, label, done, total) is called as each step starts (kind: image | video |
-    stitch), for progress bars."""
+    step(kind, label, done, total[, provider]) is called as each step starts (kind: image |
+    video | stitch), for progress bars."""
     step = step or (lambda *a: None)
     plan = proj.load_plan()
     est = estimate_remaining(proj, s)
@@ -800,7 +800,7 @@ def produce(client, s: Settings, proj: Project, log=print, step=None) -> dict:
             failed[sc["id"]] = f"skipped: continues from {ids[i - 1]}, which has no take"
             log(f"  {sc['id']}: {failed[sc['id']]}")
             continue
-        step("video", f"Shooting {sc['id']}", done - 1, total)
+        step("video", f"Shooting {sc['id']}", done - 1, total, scene_provider(plan, sc["id"], s))
         log(f"Shooting {sc['id']} ({sc['duration_s']}s, {s.resolution})…")
         try:
             out = generate_take(client, s, proj, sc["id"])

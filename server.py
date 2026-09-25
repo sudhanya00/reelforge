@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import pipeline as pl
+import providers
 
 ROOT = Path(__file__).resolve().parent
 WEB_DIST = ROOT / "web" / "out"
@@ -49,7 +50,9 @@ def projects_dir() -> Path:
 # Settings (env defaults from pipeline.Settings, overridden by the UI's saved prefs)
 # --------------------------------------------------------------------------
 
-PREF_KEYS = ("backend", "gcp_project", "gcp_location", "resolution", "image_size", "orientation")
+PREF_KEYS = ("backend", "gcp_project", "gcp_location", "resolution", "image_size", "orientation",
+             "video_provider")
+BOOL_PREFS = ("kling_audio",)
 MODEL_KEYS = ("planner_model", "image_model", "video_model")
 
 
@@ -63,6 +66,7 @@ def load_prefs() -> dict:
 def current_settings(prefs: dict | None = None) -> pl.Settings:
     p = load_prefs() if prefs is None else prefs
     kw = {k: p[k] for k in PREF_KEYS if p.get(k)}
+    kw.update({k: bool(p[k]) for k in BOOL_PREFS if k in p})
     backend = kw.get("backend") or pl.Settings().backend
     kw.update({k: v for k, v in p.get("models", {}).get(backend, {}).items() if k in MODEL_KEYS and v})
     return pl.Settings(**kw)
@@ -75,6 +79,8 @@ def settings_view(s: pl.Settings) -> dict:
         "backend": s.backend, "gcp_project": s.gcp_project, "gcp_location": s.gcp_location,
         "planner_model": s.planner_model, "image_model": s.image_model, "video_model": s.video_model,
         "resolution": s.resolution, "image_size": s.image_size, "orientation": s.orientation,
+        "video_provider": s.video_provider, "kling_audio": s.kling_audio,
+        "providers": providers.catalog(s),
         "default_models": pl.Settings.MODELS,
         # what the UI needs to show estimates on every button that spends money
         "prices": {
@@ -105,7 +111,13 @@ def client_for(s: pl.Settings):
 
 # How long each kind of step usually takes (seconds), until we've measured our own.
 DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 180,
-                     "video_1080p": 240, "video_4k": 300, "stitch": 6}
+                     "video_1080p": 240, "video_4k": 300, "stitch": 6,
+                     "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360}
+
+
+def video_key(provider: str, resolution: str) -> str:
+    """Timing-stats key for a clip; the default provider keeps its original keys."""
+    return f"video_{resolution}" if provider == providers.DEFAULT_VIDEO else f"video_{provider}_{resolution}"
 _stats_lock = threading.Lock()
 
 
@@ -241,7 +253,8 @@ def take_view(proj: pl.Project, take: Path) -> dict:
             "duration_s": meta.get("duration_s"), "cost_usd": meta.get("cost_usd"),
             "resolution": meta.get("format", {}).get("resolution"),
             "edited_from": meta.get("edited_from"), "edit": meta.get("edit"),
-            "prompt": meta.get("prompt"), "created": take.stat().st_mtime}
+            "prompt": meta.get("prompt"), "created": take.stat().st_mtime,
+            "provider": meta.get("provider", providers.DEFAULT_VIDEO), "model": meta.get("model")}
 
 
 def item_errors(proj: pl.Project) -> dict[str, str]:
@@ -270,6 +283,7 @@ KIND_SINGULAR = {"characters": "character", "props": "prop", "environments": "en
 
 
 def project_view(proj: pl.Project) -> dict:
+    s = current_settings()
     plan = proj.load_plan()
     pid = proj.root.name
     idx = pl._lookup(plan)
@@ -295,16 +309,19 @@ def project_view(proj: pl.Project) -> dict:
 
     scenes = []
     for sc in plan["scenes"]:
-        prompt, _, refs_used = pl.build_scene_request(plan, proj, sc, extract=False)
-        default_prompt = pl.build_scene_request(
-            {**plan, "prompt_overrides": {}}, proj, sc, extract=False)[0]
+        vp, shot, prompt = pl.build_shot(plan, proj, sc, s, extract=False)
+        refs_used = [r.id for r in shot.refs]
+        default_prompt = vp.build_prompt(shot)
+        pkey = pl.prompt_key(sc["id"], vp.id)
         takes = proj.takes(sc["id"])
         sel = pl.selected_take(plan, proj, sc["id"])
         generating = sc["id"] in busy or ("*" in busy and not takes)
         scenes.append({
             **{k: v for k, v in sc.items()},
             "prompt": prompt, "default_prompt": default_prompt,
-            "overridden": sc["id"] in overrides, "refs_used": refs_used,
+            "overridden": pkey in overrides, "refs_used": refs_used,
+            "provider": vp.id, "provider_chosen": sc["id"] in plan.get("video_providers", {}),
+            "shot": {"resolution": shot.resolution, "duration_s": shot.duration_s},
             "refs_missing": [r for r in sc["refs"] if r in idx and r not in refs_used],
             "takes": [take_view(proj, t) for t in takes],
             "selected": sel.name if sel else None,
@@ -386,6 +403,8 @@ class SettingsIn(BaseModel):
     resolution: str | None = None
     image_size: str | None = None
     orientation: str | None = None
+    video_provider: str | None = None
+    kling_audio: bool | None = None
     models: dict[str, dict[str, str]] | None = None
 
 
@@ -400,8 +419,9 @@ def put_settings(body: SettingsIn):
         else:
             prefs[k] = v
     try:
-        current_settings(prefs)
-    except (KeyError, TypeError, ValueError) as e:
+        s = current_settings(prefs)
+        providers.video_provider(s.video_provider, s)
+    except (KeyError, TypeError, ValueError, providers.ProviderError) as e:
         raise HTTPException(400, f"Invalid settings: {e}")
     PREFS_PATH.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
     return get_state()
@@ -504,7 +524,8 @@ def put_plan(pid: str, body: PlanIn):
             raise HTTPException(400, f"{sc.get('id')}: unknown refs {', '.join(unknown)}")
 
     def apply(plan):
-        keep = {k: plan[k] for k in ("prompt_overrides", "selected_takes", "orientation") if k in plan}
+        keep = {k: plan[k] for k in ("prompt_overrides", "selected_takes", "orientation", "video_providers")
+                if k in plan}
         plan.clear()
         plan.update({**body.plan, **keep})
     update_plan(proj, apply)
@@ -514,18 +535,43 @@ def put_plan(pid: str, body: PlanIn):
 class PromptIn(BaseModel):
     id: str
     prompt: str | None = None                        # None = back to the generated prompt
+    provider: str | None = None                      # scene prompts are per video provider
 
 
 @app.put("/api/projects/{pid}/prompt")
 def put_prompt(pid: str, body: PromptIn):
     proj = open_project(pid)
 
+    key = pl.prompt_key(body.id, body.provider) if body.provider else body.id
+
     def apply(plan):
         ov = plan.setdefault("prompt_overrides", {})
         if body.prompt and body.prompt.strip():
-            ov[body.id] = body.prompt.strip()
+            ov[key] = body.prompt.strip()
         else:
-            ov.pop(body.id, None)
+            ov.pop(key, None)
+    update_plan(proj, apply)
+    return project_view(proj)
+
+
+class ProviderIn(BaseModel):
+    provider: str | None = None                      # None = use the settings default
+
+
+@app.put("/api/projects/{pid}/scenes/{sid}/provider")
+def put_scene_provider(pid: str, sid: str, body: ProviderIn):
+    proj = open_project(pid)
+    if body.provider and body.provider not in providers.VIDEO:
+        raise HTTPException(400, f"Unknown provider {body.provider}")
+    if sid not in {sc["id"] for sc in proj.load_plan()["scenes"]}:
+        raise HTTPException(404, "No such scene")
+
+    def apply(plan):
+        chosen = plan.setdefault("video_providers", {})
+        if body.provider:
+            chosen[sid] = body.provider
+        else:
+            chosen.pop(sid, None)
     update_plan(proj, apply)
     return project_view(proj)
 
@@ -590,9 +636,13 @@ def make_take(pid: str, sid: str):
         raise HTTPException(404, "No such scene")
     s = current_settings()
 
+    plan = proj.load_plan()
+    vp = providers.video_provider(pl.scene_provider(plan, sid, s), s)
+    res = vp.resolution_for(s.resolution)
+
     def run(job: Job):
-        job.log(f"Shooting {sid} at {s.resolution}…")
-        job.step("video", f"Shooting {sid}", key=f"video_{s.resolution}")
+        job.log(f"Shooting {sid} with {vp.label} at {res}…")
+        job.step("video", f"Shooting {sid}", key=video_key(vp.id, res))
         try:
             out = pl.generate_take(client_for(s), s, proj, sid)
         except Exception as e:
@@ -620,10 +670,11 @@ def edit_take(pid: str, sid: str, take: str, body: EditIn):
 
     meta = json.loads(src.with_suffix(".json").read_text(encoding="utf-8"))
     res = meta.get("format", {}).get("resolution") or s.resolution    # an edit keeps its take's res
+    edit_provider = meta.get("provider", providers.DEFAULT_VIDEO)
 
     def run(job: Job):
         job.log(f"Editing {sid}/{take}: {body.instruction.strip()}")
-        job.step("video", f"Fixing {sid}", key=f"video_{res}")
+        job.step("video", f"Fixing {sid}", key=video_key(edit_provider, res))
         try:
             out = pl.edit_take(client_for(s), s, proj, sid, src, body.instruction)
         except Exception as e:
@@ -667,8 +718,11 @@ def stitch(pid: str):
 
 def produce_steps(job: Job, s: pl.Settings):
     """Adapter from pipeline.produce's step() callback to the job's progress."""
-    def step(kind, label, done, total):
-        key = f"video_{s.resolution}" if kind == "video" else kind
+    def step(kind, label, done, total, provider=None):
+        key = kind
+        if kind == "video":
+            vp = providers.video_provider(provider, s)
+            key = video_key(vp.id, vp.resolution_for(s.resolution))
         job.step(kind, label, done, total, key=key, record=kind != "image")
     return step
 
@@ -785,3 +839,14 @@ def _fake_client():
         from fakes import FakeClient, demo_clip
         _fake = FakeClient(demo_clip(projects_dir() / ".demo_clip.mp4"), delay=True)
     return _fake
+
+
+def enable_demo() -> None:
+    """Fake Gemini and a fake Kling API: every screen works and nothing is billed."""
+    import sys
+    import providers.kling as kling
+    sys.path.insert(0, str(ROOT / "tests"))
+    from fakes import FakeKling, demo_clip
+    CONFIG["fake"] = True
+    kling.TRANSPORT = FakeKling(demo_clip(projects_dir() / ".demo_clip.mp4"), delay=True).transport
+    os.environ.setdefault("KLING_API_KEY", "demo")

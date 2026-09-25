@@ -191,3 +191,54 @@ def test_delete_moves_film_out_and_refuses_while_busy(api, pid, monkeypatch):
     assert r["moved_to"] == "the Recycle Bin" and trashed
     assert api.get(f"/api/projects/{pid}").status_code == 404
     assert api.get("/api/projects").json() == []
+
+
+@pytest.fixture
+def kling_api(monkeypatch, mp4_bytes):
+    import providers.kling as kling_mod
+    from fakes import FakeKling
+    k = FakeKling(mp4_bytes)
+    monkeypatch.setattr(kling_mod, "TRANSPORT", k.transport)
+    monkeypatch.setattr(kling_mod.time, "sleep", lambda s: None)
+    monkeypatch.setenv("KLING_API_KEY", "test")
+    return k
+
+
+def test_state_lists_providers_and_default(api):
+    st = api.get("/api/state").json()["settings"]
+    assert st["video_provider"] == "gemini-omni"
+    assert {p["id"] for p in st["providers"]} == {"gemini-omni", "kling"}
+    st = api.put("/api/settings", json={"video_provider": "kling", "kling_audio": False}).json()["settings"]
+    assert st["video_provider"] == "kling" and st["kling_audio"] is False
+    kling = next(p for p in st["providers"] if p["id"] == "kling")
+    assert kling["price_per_s"]["720p"] == 0.084                 # no-audio price now
+    assert api.put("/api/settings", json={"video_provider": "sora"}).status_code == 400
+
+
+def test_scene_provider_choice_prompt_and_take(api, pid, kling_api):
+    v = api.put(f"/api/projects/{pid}/scenes/s01/provider", json={"provider": "kling"}).json()
+    s01 = v["scenes"][0]
+    assert s01["provider"] == "kling" and s01["provider_chosen"]
+    assert "@image" in s01["prompt"] or "Shot:" in s01["prompt"]
+    assert s01["shot"] == {"resolution": "720p", "duration_s": 6}
+    # a kling-specific prompt override doesn't leak into the omni prompt
+    v = api.put(f"/api/projects/{pid}/prompt", json={"id": "s01", "prompt": "K", "provider": "kling"}).json()
+    assert v["scenes"][0]["prompt"] == "K" and v["scenes"][0]["overridden"]
+    v = api.put(f"/api/projects/{pid}/scenes/s01/provider", json={"provider": None}).json()
+    assert v["scenes"][0]["provider"] == "gemini-omni" and v["scenes"][0]["prompt"] != "K"
+
+    api.put(f"/api/projects/{pid}/scenes/s01/provider", json={"provider": "kling"})
+    j = wait(api, api.post(f"/api/projects/{pid}/scenes/s01/takes").json())
+    assert j["status"] == "done", j
+    assert j["progress"]["key"] == "video_kling_720p"
+    take = api.get(f"/api/projects/{pid}").json()["scenes"][0]["takes"][0]
+    assert take["provider"] == "kling" and take["cost_usd"] > 0
+    assert api.put(f"/api/projects/{pid}/scenes/s01/provider", json={"provider": "x"}).status_code == 400
+
+
+def test_plan_save_keeps_scene_providers(api, pid):
+    api.put(f"/api/projects/{pid}/scenes/s02/provider", json={"provider": "kling"})
+    plan = api.get(f"/api/projects/{pid}").json()["plan"]
+    plan.pop("video_providers")
+    v = api.put(f"/api/projects/{pid}/plan", json={"plan": plan}).json()
+    assert v["plan"]["video_providers"] == {"s02": "kling"}

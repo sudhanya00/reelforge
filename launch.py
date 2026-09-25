@@ -142,8 +142,9 @@ def main() -> None:
     import uvicorn
     import server
     server.CONFIG["projects"] = ROOT / ("projects-demo" if a.demo else "projects")
-    server.CONFIG["fake"] = a.demo
-    if a.demo:  # fake timings must never feed real progress estimates
+    if a.demo:
+        server.enable_demo()
+        # fake timings must never feed real progress estimates
         server.STATS_PATH = server.CONFIG["projects"] / "stats.json"
     server.mount_web()
     if not shutil.which("ffmpeg"):
