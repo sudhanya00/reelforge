@@ -553,9 +553,10 @@ def edit_take(client, s: Settings, proj: Project, scene_id: str, take: Path,
     text = instruction.strip()
     if "keep everything else" not in text.lower():
         text += " Keep everything else the same."
+    # same format as the source take, so the edit comes back as video at its res/aspect
     interaction = client.interactions.create(
         model=s.video_model, previous_interaction_id=meta["interaction_id"],
-        input=text, timeout=s.video_timeout_s)
+        input=text, response_format=meta["format"], timeout=s.video_timeout_s)
     proj.log(kind="video_submitted", scene=scene_id, interaction_id=interaction.id,
              status=interaction.status, edited_from=take.name)
     interaction = _await_interaction(client, interaction, s.video_timeout_s)
