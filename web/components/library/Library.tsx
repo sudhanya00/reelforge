@@ -4,14 +4,16 @@ import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
-import { ArrowUp, Check, Clapperboard, Film, Minus, Palette, Plus, RectangleHorizontal, RectangleVertical, Sparkles } from "lucide-react";
+import { ArrowUp, Check, Clapperboard, Film, Minus, Palette, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, Kbd, LiveBars, Meter, Segmented, Tip } from "@/components/ui/primitives";
 import { useConfirmSpend } from "@/components/confirm";
 import { useRoute } from "@/components/shell";
-import { imageUsd, useAppState, useJobs, useNow, useProjects, videoUsd } from "@/lib/hooks";
+import { imageUsd, useAppState, useJobs, useProjects, videoUsd } from "@/lib/hooks";
+import { JobProgress } from "@/components/progress";
+import { useDeleteFilm } from "@/components/project/actions";
 import { api, url, type Job, type Orientation, type ProjectSummary, type Resolution } from "@/lib/api";
-import { ago, clock, cn, usd } from "@/lib/utils";
+import { ago, cn, usd } from "@/lib/utils";
 
 export function Library() {
   const { data: projects } = useProjects();
@@ -236,9 +238,13 @@ function Poster({ src, orientation, className }: { src: string | null; orientati
 
 function FilmCard({ p, index }: { p: ProjectSummary; index: number }) {
   const { go } = useRoute();
+  const del = useDeleteFilm();
   const next = p.final ? "final" : p.scenes[0] > 0 ? "scenes" : p.refs[0] > 0 ? "references" : "plan";
   return (
-    <motion.button
+    <motion.div
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && go(p.id, next)}
       layout
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -279,14 +285,24 @@ function FilmCard({ p, index }: { p: ProjectSummary; index: number }) {
           {p.orientation === "9:16" ? <RectangleVertical className="size-3.5" /> : <RectangleHorizontal className="size-3.5" />}
           <span className="tabular">{usd(p.cost_usd)} spent</span>
           <span className="ml-auto">{ago(p.updated)}</span>
+          {!p.busy && (
+            <Tip content="Delete film">
+              <button
+                onClick={(e) => (e.stopPropagation(), del(p.id, p.title))}
+                className="-my-1 -mr-1 rounded-full p-1.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100"
+                aria-label={`Delete ${p.title}`}
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </Tip>
+          )}
         </div>
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
 
 function PendingCard({ job }: { job: Job }) {
-  const now = useNow();
   return (
     <motion.div layout initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="overflow-hidden rounded-xl border bg-card">
       <div className="shimmer flex aspect-[16/10] items-center justify-center bg-muted/60">
@@ -298,7 +314,7 @@ function PendingCard({ job }: { job: Job }) {
       <div className="space-y-2 p-4">
         <div className="shimmer h-4 w-2/3 rounded bg-muted" />
         <p className="line-clamp-2 min-h-10 text-sm text-muted-foreground">{job.logs.at(-1) ?? "Directing…"}</p>
-        <p className="text-xs text-muted-foreground tabular">{clock(now - job.started)}</p>
+        <JobProgress job={job} className="text-live" />
       </div>
     </motion.div>
   );

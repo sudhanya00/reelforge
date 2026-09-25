@@ -10,6 +10,7 @@ import { Activity, Check, ChevronRight, Clapperboard, Moon, Settings2, Sun, Tria
 import { Button } from "@/components/ui/button";
 import { Badge, LiveBars, Popover, PopoverContent, PopoverTrigger, Spinner, Tip, TooltipProvider } from "@/components/ui/primitives";
 import { ConfirmSpendProvider } from "@/components/confirm";
+import { JobProgress } from "@/components/progress";
 import { SettingsDialog } from "@/components/settings";
 import { useAppState, useJobs, useJobWatcher, useNow, useProject } from "@/lib/hooks";
 import type { Job } from "@/lib/api";
@@ -237,6 +238,7 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
           </Badge>
         )}
       </button>
+      {job.status === "running" && job.progress && <JobProgress job={job} className="mt-2 pl-8 text-live" />}
       <AnimatePresence initial={false}>
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">

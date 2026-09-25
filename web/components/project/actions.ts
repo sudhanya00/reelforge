@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { useConfirmSpend } from "@/components/confirm";
+import { useConfirm, useConfirmSpend } from "@/components/confirm";
 import { imageUsd, useAppState, videoUsd } from "@/lib/hooks";
 import { api, type Plan, type Project } from "@/lib/api";
 import { plural } from "@/lib/utils";
@@ -69,4 +69,30 @@ export function useProjectActions(p: Project | undefined) {
       reveal: () => run("Couldn't open the folder", () => api.reveal(id)),
     };
   }, [p, s, id, key, confirm, mutate]);
+}
+
+/** Delete a film (moves it to the Recycle Bin) after confirming. */
+export function useDeleteFilm() {
+  const confirm = useConfirm();
+  const { mutate } = useSWRConfig();
+  return React.useCallback(
+    async (id: string, title: string, after?: () => void) => {
+      const ok = await confirm({
+        title: `Delete “${title}”?`,
+        detail: "The film, its references and every take move to the Recycle Bin, so you can still restore them from there.",
+        action: "Move to Recycle Bin",
+        destructive: true,
+      });
+      if (!ok) return;
+      try {
+        await api.deleteProject(id);
+        toast.success(`Moved “${title}” to the Recycle Bin`);
+        after?.();
+        mutate("/api/projects");
+      } catch (e) {
+        toast.error("Couldn't delete the film", { description: (e as Error).message });
+      }
+    },
+    [confirm, mutate],
+  );
 }

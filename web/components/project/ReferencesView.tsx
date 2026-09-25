@@ -5,9 +5,10 @@ import { motion } from "motion/react";
 import { Expand, ImageOff, Link2, PenLine, RefreshCw, RotateCcw, TriangleAlert, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, Dialog, DialogContent, DialogDescription, DialogTitle, LiveBars, Textarea, Tip } from "@/components/ui/primitives";
-import { useJobs, useNow } from "@/lib/hooks";
+import { useJobs } from "@/lib/hooks";
+import { JobProgress } from "@/components/progress";
 import { url, type Asset, type Project } from "@/lib/api";
-import { clock, cn, plural, usd } from "@/lib/utils";
+import { cn, plural, usd } from "@/lib/utils";
 import { useProjectActions } from "./actions";
 
 const GROUPS = [
@@ -58,16 +59,14 @@ export function ReferencesView({ p }: { p: Project }) {
   );
 }
 
-function useStartedAt(p: Project, id: string) {
+function useJobFor(p: Project, id: string) {
   const { running } = useJobs();
-  const j = running.find((j) => j.project === p.id && (j.claims.includes(id) || j.claims.includes("*")));
-  return j?.started;
+  return running.find((j) => j.project === p.id && (j.claims.includes(id) || j.claims.includes("*")));
 }
 
 function AssetCard({ a, p, index, uses, onPrompt, onView }: { a: Asset; p: Project; index: number; uses: number; onPrompt: () => void; onView: () => void }) {
   const act = useProjectActions(p);
-  const started = useStartedAt(p, a.id);
-  const now = useNow(a.status === "generating");
+  const job = useJobFor(p, a.id);
   const price = act.settings?.prices.image ?? 0;
   const generating = a.status === "generating";
 
@@ -80,10 +79,10 @@ function AssetCard({ a, p, index, uses, onPrompt, onView }: { a: Asset; p: Proje
         )}
 
         {generating && (
-          <div className="shimmer absolute inset-0 flex flex-col items-center justify-center gap-2 text-live">
+          <div className="shimmer absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-live">
             <LiveBars />
             <span className="text-sm font-medium">Painting</span>
-            {started && <span className="text-xs tabular opacity-70">{clock(now - started)}</span>}
+            {job && <JobProgress job={job} className="max-w-60" />}
           </div>
         )}
 

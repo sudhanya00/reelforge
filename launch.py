@@ -143,6 +143,8 @@ def main() -> None:
     import server
     server.CONFIG["projects"] = ROOT / ("projects-demo" if a.demo else "projects")
     server.CONFIG["fake"] = a.demo
+    if a.demo:  # fake timings must never feed real progress estimates
+        server.STATS_PATH = server.CONFIG["projects"] / "stats.json"
     server.mount_web()
     if not shutil.which("ffmpeg"):
         say("Note: ffmpeg not found — continuous scenes, posters and stitching need it.")

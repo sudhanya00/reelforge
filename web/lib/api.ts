@@ -25,6 +25,7 @@ export interface AppState {
   ffmpeg: boolean;
   fake: boolean;
   projects_dir: string;
+  typical_s: Record<string, number>;
 }
 
 export interface ProjectSummary {
@@ -146,6 +147,15 @@ export interface Job {
   result: Record<string, unknown> | null;
   started: number;
   finished: number | null;
+  progress: {
+    kind: string;
+    key: string;
+    label: string;
+    done: number;
+    total: number;
+    step_started: number;
+    expected_s: number;
+  } | null;
 }
 
 export class ApiError extends Error {}
@@ -189,4 +199,5 @@ export const api = {
   produce: (id: string) => call<Job>("POST", `/api/projects/${id}/produce`),
   stitch: (id: string) => call<Job>("POST", `/api/projects/${id}/stitch`),
   reveal: (id: string) => call<{ ok: boolean }>("POST", `/api/projects/${id}/reveal`),
+  deleteProject: (id: string) => call<{ ok: boolean; moved_to: string }>("DELETE", `/api/projects/${id}`),
 };

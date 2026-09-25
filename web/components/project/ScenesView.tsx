@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { ArrowUp, ChevronDown, Clapperboard, Link2, Plus, RefreshCw, RotateCcw, TriangleAlert, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, LiveBars, Spinner, Textarea, Tip } from "@/components/ui/primitives";
-import { useJobs, useNow, videoUsd } from "@/lib/hooks";
+import { useJobs, videoUsd } from "@/lib/hooks";
+import { JobProgress } from "@/components/progress";
 import { url, type Asset, type Project, type Scene, type Take } from "@/lib/api";
-import { clock, cn, secs, usd } from "@/lib/utils";
+import { cn, secs, usd } from "@/lib/utils";
 import { useProjectActions } from "./actions";
 
 export function ScenesView({ p }: { p: Project }) {
@@ -117,7 +118,8 @@ function Stage({ p, sc, take, vertical }: { p: Project; sc: Scene; take?: Take; 
   const { running } = useJobs();
   const job = running.find((j) => j.project === p.id && (j.claims.includes(sc.id) || j.claims.includes("*")));
   const generating = sc.status === "generating";
-  const now = useNow(generating);
+  // a whole-film run shoots one scene at a time; the others are waiting their turn
+  const queued = generating && !!job && job.claims.includes("*") && job.progress?.label !== `Shooting ${sc.id}`;
   const est = videoUsd(act.settings, sc.duration_s);
   const refImages = sc.refs_used.map((r) => p.assets.find((a) => a.id === r)?.image).filter(Boolean) as string[];
 
@@ -165,10 +167,24 @@ function Stage({ p, sc, take, vertical }: { p: Project; sc: Scene; take?: Take; 
 
       <AnimatePresence>
         {generating && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={cn("shimmer absolute inset-0 flex flex-col items-center justify-center gap-2 text-live", !take && "bg-muted")}>
-            <LiveBars className="h-5" bars={7} />
-            <span className="text-sm font-medium">{job?.kind === "edit" ? "Applying fix" : "Rolling"}</span>
-            {job && <span className="text-xs tabular opacity-80">{clock(now - job.started)} · usually 2–3 min</span>}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className={cn("absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-live", !queued && "shimmer", !take && "bg-muted")}
+          >
+            {queued ? (
+              <>
+                <span className="text-sm font-medium text-muted-foreground">Queued</span>
+                <span className="text-center text-xs text-muted-foreground">Waiting for its turn in this run</span>
+              </>
+            ) : (
+              <>
+                <LiveBars className="h-5" bars={7} />
+                <span className="text-sm font-medium">{job?.kind === "edit" ? "Applying fix" : "Rolling"}</span>
+                {job && <JobProgress job={job} className="max-w-56" />}
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

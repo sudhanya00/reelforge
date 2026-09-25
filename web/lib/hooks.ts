@@ -94,3 +94,29 @@ export function videoUsd(s: Settings | undefined, seconds: number, res?: Resolut
 export function imageUsd(s: Settings | undefined, n = 1) {
   return s ? s.prices.image * n : 0;
 }
+
+// ---------------------------------------------------------------- progress
+
+/**
+ * How far along a job is. Generation APIs don't report progress, so each step is timed
+ * against how long that kind of step usually takes (measured from past runs), capped at
+ * 95% until it really finishes. Multi-step jobs add their done/total on top.
+ */
+export function useJobProgress(job: Job | undefined) {
+  const now = useNow(!!job && job.status === "running", 500);
+  const p = job?.progress;
+  if (!job || !p) return null;
+  if (job.status !== "running") return { fraction: 1, left: 0, slow: false, label: p.label, step: p.done, total: p.total };
+  const elapsed = Math.max(0, now - p.step_started);
+  const stepFrac = Math.min(0.95, elapsed / p.expected_s);
+  const fraction = Math.min(0.99, (p.done + stepFrac) / p.total);
+  const left = Math.max(0, p.expected_s - elapsed) + Math.max(0, p.total - p.done - 1) * p.expected_s;
+  return { fraction, left, slow: elapsed > p.expected_s * 1.15, label: p.label, step: p.done, total: p.total };
+}
+
+export function leftText(pr: NonNullable<ReturnType<typeof useJobProgress>>) {
+  if (pr.slow) return "taking longer than usual…";
+  if (pr.left < 10) return "almost done";
+  const m = Math.round(pr.left / 60);
+  return pr.left < 90 ? `about ${Math.round(pr.left / 5) * 5}s left` : `about ${m} min left`;
+}

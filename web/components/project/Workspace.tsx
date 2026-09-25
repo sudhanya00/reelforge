@@ -2,14 +2,15 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowRight, Clapperboard, FolderOpen, RectangleHorizontal, RectangleVertical, Scissors, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, Clapperboard, FolderOpen, Trash2, RectangleHorizontal, RectangleVertical, Scissors, Sparkles, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, Kbd, LiveBars, Spinner, Tip } from "@/components/ui/primitives";
 import { useRoute, type Tab } from "@/components/shell";
-import { useJobs, useNow, useProject } from "@/lib/hooks";
+import { leftText, useJobProgress, useJobs, useProject } from "@/lib/hooks";
+import type { Job } from "@/lib/api";
 import type { Plan, Project } from "@/lib/api";
-import { clock, cn, plural, secs, usd } from "@/lib/utils";
-import { useProjectActions } from "./actions";
+import { cn, plural, secs, usd } from "@/lib/utils";
+import { useDeleteFilm, useProjectActions } from "./actions";
 import { PlanView } from "./PlanView";
 import { ReferencesView } from "./ReferencesView";
 import { ScenesView } from "./ScenesView";
@@ -56,6 +57,8 @@ export function Workspace({ id }: { id: string }) {
 
 function Header({ p, totalS }: { p: Project; totalS: number }) {
   const a = useProjectActions(p);
+  const del = useDeleteFilm();
+  const { go } = useRoute();
   return (
     <div className="flex items-start justify-between gap-6">
       <div className="min-w-0">
@@ -74,11 +77,28 @@ function Header({ p, totalS }: { p: Project; totalS: number }) {
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">{p.plan.title}</h1>
         <p className="mt-2 max-w-3xl text-muted-foreground">{p.plan.logline}</p>
       </div>
-      <Tip content="Open the project folder">
-        <Button variant="ghost" size="icon" shape="pill" onClick={a.reveal} aria-label="Open folder">
-          <FolderOpen />
-        </Button>
-      </Tip>
+      <div className="flex gap-1">
+        <Tip content="Open the project folder">
+          <Button variant="ghost" size="icon" shape="pill" onClick={a.reveal} aria-label="Open folder">
+            <FolderOpen />
+          </Button>
+        </Tip>
+        <Tip content={p.busy.length ? "Can't delete while something is generating" : "Delete film"}>
+          <span>
+            <Button
+              variant="ghost"
+              size="icon"
+              shape="pill"
+              disabled={p.busy.length > 0}
+              onClick={() => del(p.id, p.plan.title, () => go(null))}
+              aria-label="Delete film"
+              className="hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 />
+            </Button>
+          </span>
+        </Tip>
+      </div>
     </div>
   );
 }
@@ -90,7 +110,6 @@ function ActionBar({ p, tab, draft, setDraft }: { p: Project; tab: Tab; draft: P
   const { go } = useRoute();
   const { running } = useJobs();
   const mine = running.filter((j) => j.project === p.id);
-  const now = useNow(mine.length > 0);
   const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(p.plan);
   const [saving, setSaving] = React.useState(false);
 
@@ -186,11 +205,9 @@ function ActionBar({ p, tab, draft, setDraft }: { p: Project; tab: Tab; draft: P
               initial={{ opacity: 0, width: 0 }}
               animate={{ opacity: 1, width: "auto" }}
               exit={{ opacity: 0, width: 0 }}
-              className="flex items-center gap-2.5 overflow-hidden rounded-full bg-live/10 py-1.5 pr-3.5 pl-3 text-sm whitespace-nowrap text-live"
+              className="relative flex items-center gap-2.5 overflow-hidden rounded-full bg-live/10 py-1.5 pr-3.5 pl-3 text-sm whitespace-nowrap text-live"
             >
-              <LiveBars />
-              <span className="font-medium">{mine[0].label}</span>
-              <span className="tabular opacity-70">{clock(now - mine[0].started)}</span>
+              <LiveProgress job={mine[0]} />
               {mine.length > 1 && <span className="opacity-70">+{mine.length - 1}</span>}
             </motion.div>
           )}
@@ -204,6 +221,22 @@ function ActionBar({ p, tab, draft, setDraft }: { p: Project; tab: Tab; draft: P
         {primary}
       </motion.div>
     </div>
+  );
+}
+
+function LiveProgress({ job }: { job: Job }) {
+  const pr = useJobProgress(job);
+  return (
+    <>
+      <LiveBars />
+      <span className="max-w-72 truncate font-medium">{pr?.label ?? job.label}</span>
+      {pr && <span className="tabular opacity-70">{leftText(pr)}</span>}
+      {pr && (
+        <span className="absolute inset-x-3 bottom-0 h-[2px] overflow-hidden rounded-full bg-live/15">
+          <span className="block h-full bg-live transition-[width] duration-700 ease-linear" style={{ width: `${pr.fraction * 100}%` }} />
+        </span>
+      )}
+    </>
   );
 }
 
