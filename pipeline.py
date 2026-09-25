@@ -212,6 +212,15 @@ def _is_fatal(e: Exception) -> bool:
     return isinstance(e, google.auth.exceptions.GoogleAuthError) or         _http_status(e) in (401, 402, 403, 404)
 
 
+SAFETY_HINTS = ("safety", "sexual", "violen", "harass", "hate speech", "dangerous content",
+                "prohibited", "responsible ai", "usage polic", "content polic", "minor")
+
+
+def _looks_like_safety_block(msg: str) -> bool:
+    m = msg.lower()
+    return any(h in m for h in SAFETY_HINTS)
+
+
 def friendly_error(e: Exception) -> str:
     """One-line explanation of a failure, with what to do about it."""
     status = _http_status(e)
@@ -219,6 +228,8 @@ def friendly_error(e: Exception) -> str:
     if isinstance(e, google.auth.exceptions.GoogleAuthError):
         return ("Google Cloud credentials are missing or expired. "
                 "Run: gcloud auth application-default login")
+    if _looks_like_safety_block(msg):
+        return f"Blocked by the model's safety filter: {msg}"
     if status == 402:
         return ("Billing: this API key's prepaid credits are used up. Top up in AI Studio, "
                 "or switch the backend to vertex.")
@@ -230,7 +241,7 @@ def friendly_error(e: Exception) -> str:
     if status == 429:
         return "Rate limit or quota exceeded, even after retries. Wait a few minutes and resume."
     if status == 400:
-        return f"The request was rejected (often a safety filter or a bad parameter): {msg}"
+        return f"The request was rejected: {msg}"
     if status and status >= 500:
         return f"Google's servers failed (HTTP {status}) even after retries. Try again shortly."
     return f"{type(e).__name__}: {msg}"
@@ -572,8 +583,9 @@ def generate_image(client: genai.Client, s: Settings, prompt: str, out: Path,
             out.write_bytes(data)
             return _usage_gc(resp)
     reason = resp.candidates[0].finish_reason if resp.candidates else getattr(resp, "prompt_feedback", None)
-    raise RuntimeError(f"No image returned for {out.stem} (reason: {reason}). "
-                       f"Often a safety block; try rewording the prompt.")
+    if any(k in str(reason) for k in ("SAFETY", "PROHIBITED", "BLOCKLIST", "SPII")):
+        raise RuntimeError(f"{out.stem} was blocked by the safety filter ({reason}).")
+    raise RuntimeError(f"No image returned for {out.stem} (reason: {reason}).")
 
 
 def asset_jobs(plan: dict) -> list[dict]:
@@ -855,19 +867,33 @@ def estimate_remaining(proj: Project, s: Settings) -> dict:
             "usd": round(usd, 2)}
 
 
-def produce(client, s: Settings, proj: Project, log=print) -> dict:
+def produce(client, s: Settings, proj: Project, log=print, step=None) -> dict:
     """Make everything the film still needs: missing references, one take for each scene
     that has none, then the final cut. Finished work is skipped, so re-running resumes an
-    interrupted or failed run. Returns {"failed": {id: why}, "final": Path | None}."""
+    interrupted or failed run. Returns {"failed": {id: why}, "final": Path | None}.
+    step(kind, label, done, total) is called as each step starts (kind: image | video |
+    stitch), for progress bars."""
+    step = step or (lambda *a: None)
     plan = proj.load_plan()
     est = estimate_remaining(proj, s)
     log(f"To make: {len(est['refs'])} references, {len(est['scenes'])} scenes "
         f"({est['video_s']}s at {s.resolution}), about ${est['usd']:.2f}")
     failed: dict[str, str] = {}
+    total, done = len(est["refs"]) + len(est["scenes"]) + 1, 0
 
     if est["refs"]:
         log("Reference images…")
-        res = generate_assets(client, s, proj, on_progress=lambda i, st: log(f"  {i}: {st}"))
+        n_refs = len(est["refs"])
+        step("image", f"Painting {n_refs} references", 0, total)
+
+        def on_asset(i, st):
+            nonlocal done
+            log(f"  {i}: {st}")
+            done += 1
+            if done < n_refs:
+                step("image", f"Painting references · {done} of {n_refs} done", done, total)
+        res = generate_assets(client, s, proj, on_progress=on_asset)
+        done = n_refs
         failed.update({i: st for i, st in res.items() if st.startswith(("failed", "fatal"))})
         if any(st.startswith("fatal") for st in res.values()):
             log("Stopping: this error will affect every call.")
@@ -877,6 +903,7 @@ def produce(client, s: Settings, proj: Project, log=print) -> dict:
     for i, sc in enumerate(plan["scenes"]):
         if proj.takes(sc["id"]):
             continue
+        done += 1                                 # counts this scene whether shot, skipped or failed
         no_img = [r for r in sc["refs"] if r in _lookup(plan) and not proj.asset_path(r).exists()]
         if no_img:                                # don't pay for a shot without its identity refs
             failed[sc["id"]] = f"skipped: missing references {', '.join(no_img)}"
@@ -886,6 +913,7 @@ def produce(client, s: Settings, proj: Project, log=print) -> dict:
             failed[sc["id"]] = f"skipped: continues from {ids[i - 1]}, which has no take"
             log(f"  {sc['id']}: {failed[sc['id']]}")
             continue
+        step("video", f"Shooting {sc['id']}", done - 1, total)
         log(f"Shooting {sc['id']} ({sc['duration_s']}s, {s.resolution})…")
         try:
             out = generate_take(client, s, proj, sc["id"])
@@ -906,6 +934,7 @@ def produce(client, s: Settings, proj: Project, log=print) -> dict:
         log(f"Not stitching yet; scenes without a take: {', '.join(missing)}. "
             "Fix the cause, then resume.")
     else:
+        step("stitch", "Stitching the final cut", total - 1, total)
         try:
             final = stitch(proj)
             log(f"Final cut: {final}")

@@ -197,7 +197,8 @@ def test_gives_up_after_max_retries(proj, client, fast):
     (api_error(404, "no such model"), "Check the model ids"),
     (interactions_error(403, "denied"), "Vertex AI API is enabled"),
     (interactions_error(429), "Rate limit"),
-    (api_error(400, "blocked"), "safety filter"),
+    (api_error(400, "Prompt blocked: sexually explicit content"), "safety filter"),
+    (api_error(400, "Invalid aspect_ratio"), "The request was rejected: Invalid aspect_ratio"),
 ])
 def test_friendly_error_messages(err, expect):
     assert expect in pl.friendly_error(err)

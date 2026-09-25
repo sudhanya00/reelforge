@@ -19,7 +19,7 @@ def api(tmp_path, monkeypatch, fake):
     monkeypatch.setitem(server.CONFIG, "fake", True)
     monkeypatch.setattr(server, "PREFS_PATH", tmp_path / "prefs.json")
     monkeypatch.setattr(server, "_fake", fake)
-    monkeypatch.setattr(server, "LAST_ERRORS", {})
+    monkeypatch.setattr(server, "STATS_PATH", tmp_path / "stats.json")
     server.JOBS.clear()
     return TestClient(server.app)
 
@@ -110,7 +110,7 @@ def test_plan_edit_validation_keeps_overrides(api, pid):
 
 
 def test_failures_show_on_cards(api, pid, fake):
-    fake.errors["image"] = [api_error(400, "blocked")]
+    fake.errors["image"] = [api_error(400, "Image blocked by safety filter")]
     wait(api, api.post(f"/api/projects/{pid}/assets", json={"ids": ["char_a"]}).json())
     a = next(a for a in api.get(f"/api/projects/{pid}").json()["assets"] if a["id"] == "char_a")
     assert a["status"] == "missing" and "safety filter" in a["error"]
@@ -151,3 +151,43 @@ def test_bad_ids_are_rejected(api, pid):
     assert api.post(f"/api/projects/{pid}/scenes/s99/takes").status_code == 404
     assert api.get(f"/api/projects/{pid}/poster?path=../../x.mp4").status_code == 404
     assert api.post("/api/projects", json={"story": "  "}).status_code == 400
+
+
+def test_errors_persist_in_the_log_and_clear_on_success(api, pid, fake):
+    fake.errors["video"] = [interactions_error(400, "Output blocked: sexual content")]
+    j = wait(api, api.post(f"/api/projects/{pid}/scenes/s03/takes").json())
+    assert j["status"] == "failed" and j["error"].startswith("Blocked by the model's safety filter")
+    server.JOBS.clear()                                  # as if the app restarted
+    s03 = api.get(f"/api/projects/{pid}").json()["scenes"][2]
+    assert "safety filter" in s03["error"]
+    wait(api, api.post(f"/api/projects/{pid}/scenes/s03/takes").json())
+    assert api.get(f"/api/projects/{pid}").json()["scenes"][2]["error"] is None
+
+
+def test_jobs_report_progress_and_learn_durations(api, pid):
+    j = wait(api, api.post(f"/api/projects/{pid}/assets", json={}).json())
+    assert j["progress"]["kind"] == "image" and j["progress"]["done"] == j["progress"]["total"] == 4
+    j = wait(api, api.post(f"/api/projects/{pid}/scenes/s01/takes").json())
+    assert j["progress"]["key"] == "video_720p" and j["progress"]["expected_s"] > 0
+    typical = api.get("/api/state").json()["typical_s"]
+    assert typical["video_720p"] < 10                    # measured from the fake run, not the default
+    assert typical["image"] == server.DEFAULT_TYPICAL_S["image"]  # parallel batch isn't measured
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_produce_progress_counts_every_step(api, pid):
+    j = wait(api, api.post(f"/api/projects/{pid}/produce").json())
+    assert j["progress"]["total"] == 4 + 3 + 1 and j["progress"]["done"] == 8
+
+
+def test_delete_moves_film_out_and_refuses_while_busy(api, pid, monkeypatch):
+    trashed = []
+    import send2trash
+    monkeypatch.setattr(send2trash, "send2trash", lambda path: trashed.append(path) or __import__("shutil").rmtree(path))
+    server.JOBS["x"] = server.Job(id="x", kind="take", label="busy", project=pid, claims={"s01"})
+    assert api.delete(f"/api/projects/{pid}").status_code == 409
+    server.JOBS["x"].status = "done"
+    r = api.delete(f"/api/projects/{pid}").json()
+    assert r["moved_to"] == "the Recycle Bin" and trashed
+    assert api.get(f"/api/projects/{pid}").status_code == 404
+    assert api.get("/api/projects").json() == []

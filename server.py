@@ -28,6 +28,7 @@ import pipeline as pl
 ROOT = Path(__file__).resolve().parent
 WEB_DIST = ROOT / "web" / "out"
 PREFS_PATH = ROOT / "reelforge.settings.json"          # UI settings; gitignored
+STATS_PATH = ROOT / "reelforge.stats.json"             # measured step durations; gitignored
 
 # configured by launch.py (or tests) before the app serves requests
 CONFIG = {"projects": ROOT / "projects", "fake": False}
@@ -102,6 +103,35 @@ def client_for(s: pl.Settings):
 # Jobs
 # --------------------------------------------------------------------------
 
+# How long each kind of step usually takes (seconds), until we've measured our own.
+DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 180,
+                     "video_1080p": 240, "video_4k": 300, "stitch": 6}
+_stats_lock = threading.Lock()
+
+
+def record_duration(key: str, seconds: float) -> None:
+    with _stats_lock:
+        try:
+            stats = json.loads(STATS_PATH.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            stats = {}
+        stats[key] = (stats.get(key, []) + [round(seconds, 1)])[-20:]
+        STATS_PATH.write_text(json.dumps(stats), encoding="utf-8")
+
+
+def typical_s() -> dict[str, float]:
+    """Median of the last 20 measured runs per step kind, else a default."""
+    try:
+        stats = json.loads(STATS_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        stats = {}
+    out = dict(DEFAULT_TYPICAL_S)
+    for k, v in stats.items():
+        if v:
+            out[k] = sorted(v)[len(v) // 2]
+    return out
+
+
 @dataclass
 class Job:
     id: str
@@ -115,22 +145,38 @@ class Job:
     result: dict | None = None
     started: float = field(default_factory=time.time)
     finished: float | None = None
+    # {kind, key, label, done, total, step_started, expected_s}: drives the UI's progress bars
+    progress: dict | None = None
+    _record: bool = False
 
     def log(self, msg: str) -> None:
         self.logs.append(msg)
+
+    def step(self, kind: str, label: str, done: int = 0, total: int = 1,
+             key: str | None = None, record: bool = True) -> None:
+        """Start a step. The previous one's duration feeds future estimates."""
+        now = time.time()
+        self.close_step(now)
+        key = key or kind
+        self.progress = {"kind": kind, "key": key, "label": label, "done": done, "total": total,
+                         "step_started": now, "expected_s": typical_s().get(key, 60)}
+        self._record = record
+
+    def close_step(self, now: float) -> None:
+        if self.progress and self._record and self.status == "running":
+            record_duration(self.progress["key"], now - self.progress["step_started"])
+        self._record = False
 
     def view(self) -> dict:
         return {"id": self.id, "kind": self.kind, "label": self.label, "project": self.project,
                 "claims": sorted(self.claims), "status": self.status, "logs": self.logs[-200:],
                 "error": self.error, "result": self.result, "started": self.started,
-                "finished": self.finished}
+                "finished": self.finished, "progress": self.progress}
 
 
 JOBS: dict[str, Job] = {}
 _jobs_lock = threading.Lock()
 _executor = ThreadPoolExecutor(max_workers=8)
-# last failure per (project, item) so a card can say why it has no image/take
-LAST_ERRORS: dict[tuple[str, str], str] = {}
 
 
 def running_claims(project: str) -> set[str]:
@@ -150,6 +196,9 @@ def submit(kind: str, label: str, project: str | None, claims: set[str], fn) -> 
     def run():
         try:
             job.result = fn(job) or {}
+            job.close_step(time.time())
+            if job.progress:
+                job.progress["done"] = job.progress["total"]
             job.status = "done"
         except Exception as e:                      # noqa: BLE001 - reported to the UI
             job.error = pl.friendly_error(e)
@@ -195,6 +244,28 @@ def take_view(proj: pl.Project, take: Path) -> dict:
             "prompt": meta.get("prompt"), "created": take.stat().st_mtime}
 
 
+def item_errors(proj: pl.Project) -> dict[str, str]:
+    """Latest failure per scene/reference from log.jsonl, cleared by a later success."""
+    errs: dict[str, str] = {}
+    path = proj.root / "log.jsonl"
+    if not path.exists():
+        return errs
+    for line in path.read_text(encoding="utf-8").splitlines():
+        e = json.loads(line)
+        if e.get("kind") == "error":
+            errs[e["item"]] = e["error"]
+        elif e.get("kind") == "image":
+            errs.pop(e.get("id"), None)
+        elif e.get("kind") in ("video", "video_edit"):
+            errs.pop(e.get("scene"), None)
+    return errs
+
+
+def record_failures(proj: pl.Project, failed: dict[str, str]) -> None:
+    for item, why in failed.items():
+        proj.log(kind="error", item=item, error=why)
+
+
 KIND_SINGULAR = {"characters": "character", "props": "prop", "environments": "environment"}
 
 
@@ -205,6 +276,7 @@ def project_view(proj: pl.Project) -> dict:
     busy = running_claims(pid)
     overrides = plan.get("prompt_overrides", {})
     defaults = {j["id"]: j["prompt"] for j in pl.asset_jobs({**plan, "prompt_overrides": {}})}
+    errors = item_errors(proj)
 
     assets = []
     for j in pl.asset_jobs(plan):
@@ -218,7 +290,7 @@ def project_view(proj: pl.Project) -> dict:
             "overridden": j["id"] in overrides, "base": j["base"], "aspect": j["aspect"],
             "image": file_url(proj, path) if path.exists() else None,
             "status": "generating" if generating else ("done" if path.exists() else "missing"),
-            "error": LAST_ERRORS.get((pid, j["id"])),
+            "error": errors.get(j["id"]),
         })
 
     scenes = []
@@ -237,7 +309,7 @@ def project_view(proj: pl.Project) -> dict:
             "takes": [take_view(proj, t) for t in takes],
             "selected": sel.name if sel else None,
             "status": "generating" if generating else ("done" if takes else "missing"),
-            "error": LAST_ERRORS.get((pid, sc["id"])),
+            "error": errors.get(sc["id"]),
         })
 
     final = proj.root / "final.mp4"
@@ -304,7 +376,7 @@ def update_plan(proj: pl.Project, fn) -> dict:
 def get_state():
     s = current_settings()
     return {"settings": settings_view(s), "ffmpeg": bool(shutil.which("ffmpeg")),
-            "fake": CONFIG["fake"], "projects_dir": str(projects_dir())}
+            "fake": CONFIG["fake"], "projects_dir": str(projects_dir()), "typical_s": typical_s()}
 
 
 class SettingsIn(BaseModel):
@@ -393,14 +465,15 @@ def create_project(body: NewFilm):
     def run(job: Job):
         client = client_for(s)
         job.log("Writing the production plan…")
+        job.step("plan", "Writing the plan")
         proj = pl.new_project(client, s, body.story.strip(), body.style.strip(),
                               max(1, min(body.scenes, 20)), projects_dir())
         job.project = proj.root.name
         job.claims = {"*"}
         job.log(f"Plan ready: {proj.load_plan()['title']}")
         if body.auto:
-            result = pl.produce(client, s, proj, log=job.log)
-            record_failures(proj.root.name, result["failed"])
+            result = pl.produce(client, s, proj, log=job.log, step=produce_steps(job, s))
+            record_failures(proj, result["failed"])
         return {"project": proj.root.name}
 
     job = submit("film" if body.auto else "plan",
@@ -470,11 +543,6 @@ def put_selected(pid: str, sid: str, body: SelectIn):
     return project_view(proj)
 
 
-def record_failures(pid: str, failed: dict) -> None:
-    for item, why in failed.items():
-        LAST_ERRORS[(pid, item)] = why
-
-
 class AssetsIn(BaseModel):
     ids: list[str] | None = None                     # None = all missing
     force: bool = False
@@ -494,13 +562,19 @@ def make_assets(pid: str, body: AssetsIn):
     s = current_settings()
 
     def run(job: Job):
-        for i in ids:
-            LAST_ERRORS.pop((pid, i), None)
+        n = len(ids)
+        # images run in parallel, so only a single image measures a clean duration
+        job.step("image", f"Painting {n} reference{'s' * (n != 1)}", 0, n, record=n == 1)
+
+        def on_progress(i, st):
+            job.log(f"{i}: {st}")
+            done = job.progress["done"] + 1
+            if done < n:
+                job.step("image", f"Painting references · {done} of {n} done", done, n, record=False)
         res = pl.generate_assets(client_for(s), s, proj, only=ids if (body.ids or body.force) else None,
-                                 skip_existing=not body.force,
-                                 on_progress=lambda i, st: job.log(f"{i}: {st}"))
+                                 skip_existing=not body.force, on_progress=on_progress)
         bad = {i: st for i, st in res.items() if st.startswith(("failed", "fatal"))}
-        record_failures(pid, {i: st.split(": ", 1)[1] for i, st in bad.items()})
+        record_failures(proj, {i: st.split(": ", 1)[1] for i, st in bad.items()})
         if bad and len(bad) == len(res):
             raise RuntimeError(next(iter(bad.values())).split(": ", 1)[1])
         return {"statuses": res}
@@ -517,12 +591,12 @@ def make_take(pid: str, sid: str):
     s = current_settings()
 
     def run(job: Job):
-        LAST_ERRORS.pop((pid, sid), None)
         job.log(f"Shooting {sid} at {s.resolution}…")
+        job.step("video", f"Shooting {sid}", key=f"video_{s.resolution}")
         try:
             out = pl.generate_take(client_for(s), s, proj, sid)
         except Exception as e:
-            LAST_ERRORS[(pid, sid)] = pl.friendly_error(e)
+            record_failures(proj, {sid: pl.friendly_error(e)})
             raise
         update_plan(proj, lambda plan: plan.setdefault("selected_takes", {}).__setitem__(sid, out.name))
         return {"take": out.name}
@@ -544,13 +618,16 @@ def edit_take(pid: str, sid: str, take: str, body: EditIn):
         raise HTTPException(400, "Describe the fix first.")
     s = current_settings()
 
+    meta = json.loads(src.with_suffix(".json").read_text(encoding="utf-8"))
+    res = meta.get("format", {}).get("resolution") or s.resolution    # an edit keeps its take's res
+
     def run(job: Job):
-        LAST_ERRORS.pop((pid, sid), None)
         job.log(f"Editing {sid}/{take}: {body.instruction.strip()}")
+        job.step("video", f"Fixing {sid}", key=f"video_{res}")
         try:
             out = pl.edit_take(client_for(s), s, proj, sid, src, body.instruction)
         except Exception as e:
-            LAST_ERRORS[(pid, sid)] = pl.friendly_error(e)
+            record_failures(proj, {sid: pl.friendly_error(e)})
             raise
         update_plan(proj, lambda plan: plan.setdefault("selected_takes", {}).__setitem__(sid, out.name))
         return {"take": out.name}
@@ -564,8 +641,8 @@ def produce(pid: str):
     s = current_settings()
 
     def run(job: Job):
-        result = pl.produce(client_for(s), s, proj, log=job.log)
-        record_failures(pid, result["failed"])
+        result = pl.produce(client_for(s), s, proj, log=job.log, step=produce_steps(job, s))
+        record_failures(proj, result["failed"])
         if result["failed"] and not result["final"]:
             done = [k for k in result["failed"]]
             job.result = {"failed": result["failed"]}
@@ -580,11 +657,41 @@ def stitch(pid: str):
     proj = open_project(pid)
 
     def run(job: Job):
+        job.step("stitch", "Stitching the final cut")
         out = pl.stitch(proj)
         job.log(f"Final cut: {out.name}")
         return {"final": out.name}
 
     return submit("stitch", "Stitching the final cut", pid, {"stitch"}, run).view()
+
+
+def produce_steps(job: Job, s: pl.Settings):
+    """Adapter from pipeline.produce's step() callback to the job's progress."""
+    def step(kind, label, done, total):
+        key = f"video_{s.resolution}" if kind == "video" else kind
+        job.step(kind, label, done, total, key=key, record=kind != "image")
+    return step
+
+
+@app.delete("/api/projects/{pid}")
+def delete_project(pid: str):
+    """Move a film to the Recycle Bin (restorable) — never a hard delete."""
+    proj = open_project(pid)
+    if running_claims(pid):
+        raise HTTPException(409, "Something in this film is still generating. Wait for it to finish.")
+    with plan_lock(pid):
+        try:
+            from send2trash import send2trash
+            send2trash(str(proj.root))
+            where = "the Recycle Bin"
+        except Exception:                            # noqa: BLE001 - no trash available: keep a copy
+            trash = projects_dir() / ".trash"
+            trash.mkdir(exist_ok=True)
+            dest = trash / f"{pid}-{int(time.time())}"
+            shutil.move(str(proj.root), dest)
+            where = str(dest)
+    _plan_locks.pop(pid, None)
+    return {"ok": True, "moved_to": where}
 
 
 @app.post("/api/projects/{pid}/reveal")
