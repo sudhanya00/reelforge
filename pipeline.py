@@ -19,7 +19,7 @@ import shutil
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -34,6 +34,10 @@ load_dotenv(Path(__file__).with_name(".env"))
 # Config
 # --------------------------------------------------------------------------
 
+def _env_bool(name: str) -> bool:
+    return os.environ.get(name, "").lower() in ("1", "true", "yes")
+
+
 @dataclass
 class Settings:
     planner_model: str = "gemini-3.1-pro-preview"
@@ -43,10 +47,24 @@ class Settings:
     resolution: str = "720p"                             # 360p | 720p | 1080p | 4k
     image_size: str = "2K"                               # 1K | 2K | 4K
     video_timeout_s: int = 900
+    # "gemini" = AI Studio key (GEMINI_API_KEY); "vertex" = bills a GCP project,
+    # so GCP credits apply. Defaults come from the standard google-genai env vars.
+    backend: str = field(default_factory=lambda: "vertex" if _env_bool("GOOGLE_GENAI_USE_VERTEXAI") else "gemini")
+    gcp_project: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLOUD_PROJECT", ""))
+    gcp_location: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLOUD_LOCATION", "global"))
 
 
-def make_client(api_key: str | None = None) -> genai.Client:
-    return genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY"))
+def make_client(s: Settings, api_key: str | None = None) -> genai.Client:
+    """Explicit args everywhere so env vars for one backend never leak into the other."""
+    if s.backend == "vertex":
+        key = api_key or os.environ.get("VERTEX_API_KEY")
+        if key:                                   # Vertex express mode (key bound to a project)
+            return genai.Client(vertexai=True, api_key=key)
+        if not s.gcp_project:
+            raise ValueError("Vertex backend needs GOOGLE_CLOUD_PROJECT (or a VERTEX_API_KEY).")
+        # Application Default Credentials: `gcloud auth application-default login`
+        return genai.Client(vertexai=True, project=s.gcp_project, location=s.gcp_location)
+    return genai.Client(vertexai=False, api_key=api_key or os.environ.get("GEMINI_API_KEY"))
 
 
 # --------------------------------------------------------------------------
@@ -530,7 +548,7 @@ def stitch(proj: Project) -> Path:
 
 def run_all(story: str, style: str, s: Settings, base_dir: Path = Path("projects"),
             n_scenes: int = 6, api_key: str | None = None, log=print) -> Project:
-    client = make_client(api_key)
+    client = make_client(s, api_key)
     log("Planning…")
     plan = plan_story(client, s, story, style, n_scenes)
     proj = Project.new(base_dir, plan["title"])

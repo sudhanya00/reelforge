@@ -14,9 +14,21 @@ st.set_page_config(page_title="ReelForge", layout="wide")
 # ---------------- sidebar: settings + project picker ----------------
 with st.sidebar:
     st.header("Settings")
-    api_key = st.text_input("Gemini API key", value=os.environ.get("GEMINI_API_KEY", ""),
-                            type="password")
+    defaults = pl.Settings()
+    backend = st.radio("Backend", ["gemini", "vertex"], horizontal=True,
+                       index=["gemini", "vertex"].index(defaults.backend),
+                       help="gemini = AI Studio API key. vertex = bills a GCP project (GCP credits apply).")
+    if backend == "vertex":
+        gcp_project = st.text_input("GCP project", defaults.gcp_project)
+        gcp_location = st.text_input("GCP location", defaults.gcp_location)
+        api_key = st.text_input("Vertex API key (optional, else gcloud ADC)",
+                                value=os.environ.get("VERTEX_API_KEY", ""), type="password")
+    else:
+        gcp_project, gcp_location = defaults.gcp_project, defaults.gcp_location
+        api_key = st.text_input("Gemini API key", value=os.environ.get("GEMINI_API_KEY", ""),
+                                type="password")
     s = pl.Settings(
+        backend=backend, gcp_project=gcp_project, gcp_location=gcp_location,
         planner_model=st.text_input("Planner model", pl.Settings.planner_model),
         image_model=st.text_input("Image model", pl.Settings.image_model),
         video_model=st.text_input("Video model", pl.Settings.video_model),
@@ -28,13 +40,17 @@ with st.sidebar:
     existing = sorted([p.name for p in BASE.iterdir() if (p / "plan.json").exists()], reverse=True)
     pick = st.selectbox("Open project", ["— new —"] + existing)
 
-client = pl.make_client(api_key) if api_key else None
+client_error = None
+try:
+    client = pl.make_client(s, api_key) if (api_key or backend == "vertex") else None
+except Exception as e:
+    client, client_error = None, str(e)
 proj = None if pick == "— new —" else pl.Project(BASE / pick)
 
 
 def need_client():
     if not client:
-        st.error("Add your Gemini API key in the sidebar first.")
+        st.error(client_error or "Add your Gemini API key in the sidebar first.")
         st.stop()
 
 

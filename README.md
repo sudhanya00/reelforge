@@ -9,6 +9,17 @@ references attached, ffmpeg stitches the selected takes.
     echo GEMINI_API_KEY=... > .env   # or export it, or paste it in the sidebar
     # optional but recommended: ffmpeg on PATH (for continuity frames + stitching)
 
+### Billing via Vertex AI (GCP credits)
+AI Studio keys bill AI Studio (prepaid or postpaid); GCP credits apply only through Vertex AI.
+Put this in `.env` instead, then run `gcloud auth application-default login`:
+
+    GOOGLE_GENAI_USE_VERTEXAI=true
+    GOOGLE_CLOUD_PROJECT=<your-project-id>
+    GOOGLE_CLOUD_LOCATION=global     # preview models are usually served from global
+
+Or set `VERTEX_API_KEY` (Vertex express mode) instead of using gcloud credentials.
+On Vertex, 1080p/4k (`delivery: uri`) needs a GCS bucket; 360p/720p return inline.
+
 ## Run
     streamlit run app.py             # step by step, with checkpoints
     python cli.py --story "..." --style "..." --orientation 9:16
