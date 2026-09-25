@@ -13,3 +13,5 @@ web/out/
 web/next-env.d.ts
 web/*.tsbuildinfo
 reelforge.stats.json
+experiments/*.log
+experiments/ab_takes.json
