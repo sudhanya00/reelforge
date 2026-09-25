@@ -33,6 +33,7 @@ from google.genai import types
 from google.genai._gaos.errors import GenAiError   # raised by client.interactions.*
 
 import director
+import library
 import providers
 from prompts import dot as _dot, edit_instruction, style_line
 from providers import ProviderError, Ref, Shot
@@ -460,19 +461,45 @@ def direct_plan(client, s: Settings, plan: dict) -> tuple[dict, list[dict], dict
     revised = director.normalize(out["plan"], allow_multi_shot=s.allow_in_clip_cuts)
     revised.update({k: plan[k] for k in director.PROJECT_KEYS if k in plan})
     revised["director_notes"] = out["notes"]
-    return revised, out["notes"], usage
+    return enforce_cast(revised), out["notes"], usage
+
+
+def enforce_cast(plan: dict) -> dict:
+    """Library characters stay exactly as saved, whatever the planner or director wrote. A cast
+    member the planner dropped or renamed is matched by name, or added back."""
+    for c in plan.get("cast", []):
+        chars = plan.setdefault("characters", [])
+        found = next((x for x in chars if x["id"] == c["id"]), None)
+        if not found:
+            found = next((x for x in chars if x["name"].strip().lower() == c["name"].strip().lower()), None)
+            if found:                                    # renamed id: point every ref at the cast id
+                old = found["id"]
+                for sc in plan.get("scenes", []):
+                    sc["refs"] = [c["id"] if r == old else r for r in sc.get("refs", [])]
+            else:
+                found = {"id": c["id"]}
+                chars.append(found)
+        found.update({k: c[k] for k in ("id", *library.FIELDS)})
+    return plan
 
 
 def plan_story(client: genai.Client, s: Settings, story: str, style: str,
-               n_scenes: int = 6, preset: str | None = None, pacing: str | None = None) -> tuple[dict, dict]:
-    """Returns (plan, usage). v2 drafts timed beats and then runs the director pass."""
+               n_scenes: int = 6, preset: str | None = None, pacing: str | None = None,
+               cast: list[dict] | None = None) -> tuple[dict, dict]:
+    """Returns (plan, usage). v2 drafts timed beats and then runs the director pass.
+    cast: library characters to use as saved."""
+    cast_snapshot = [{k: c[k] for k in ("id", *library.FIELDS)} for c in (cast or [])]
+    cast_text = library.cast_brief(cast_snapshot)
     if s.planner_version == "v2":
-        prompt = director.planner_prompt(story, style, n_scenes, s.orientation, preset, pacing)
+        prompt = director.planner_prompt(story, style, n_scenes, s.orientation, preset, pacing, cast_text)
         draft, usage = _json_call(client, s, director.PLANNER_V2_SYSTEM, prompt, director.PLAN_SCHEMA_V2, "plan")
         draft = director.normalize(draft, allow_multi_shot=s.allow_in_clip_cuts)
         draft["orientation"] = s.orientation
         draft["brief"] = {"story": story, "style": style, "preset": preset, "pacing": draft.get("pacing") or pacing}
         draft["planner"] = "v2"
+        if cast_snapshot:
+            draft["cast"] = cast_snapshot
+            enforce_cast(draft)
         plan, _, usage2 = direct_plan(client, s, draft)
         return plan, _add_usage(usage, usage2)
     prompt = (
@@ -480,6 +507,7 @@ def plan_story(client: genai.Client, s: Settings, story: str, style: str,
         f"VISUAL STYLE:\n{style or 'director’s choice, cinematic and photorealistic'}\n\n"
         f"ORIENTATION: {s.orientation}\n"
         f"TARGET SCENE COUNT: about {n_scenes}\n"
+        + (f"\nCAST (use exactly as given, same ids):\n{cast_text}\n" if cast_text else "")
     )
     resp = _with_retry(lambda: client.models.generate_content(
         model=s.planner_model,
@@ -493,15 +521,22 @@ def plan_story(client: genai.Client, s: Settings, story: str, style: str,
     ), s, "plan")
     plan = json.loads(resp.text)
     plan["orientation"] = s.orientation
+    if cast_snapshot:
+        plan["cast"] = cast_snapshot
+        enforce_cast(plan)
     return plan, _usage_gc(resp)
 
 
 def new_project(client, s: Settings, story: str, style: str, n_scenes: int = 6,
                 base_dir: Path = Path("projects"), preset: str | None = None,
-                pacing: str | None = None) -> "Project":
-    """Plan the film, create its folder, and log the planning call(s) with their cost."""
-    plan, usage = plan_story(client, s, story, style, n_scenes, preset, pacing)
+                pacing: str | None = None, cast: list[dict] | None = None) -> "Project":
+    """Plan the film, create its folder, and log the planning call(s) with their cost.
+    cast: library characters (with sheet_path); their sheets are copied in, not painted."""
+    plan, usage = plan_story(client, s, story, style, n_scenes, preset, pacing, cast)
     proj = Project.new(base_dir, plan["title"])
+    for c in cast or []:
+        if c.get("sheet_path"):
+            shutil.copy2(c["sheet_path"], proj.asset_path(c["id"]))
     proj.save_plan(plan)
     proj.log(kind="plan", model=s.planner_model, planner=s.planner_version, story=story, style=style,
              preset=preset, pacing=plan.get("pacing"), n_scenes=n_scenes, usage=usage,

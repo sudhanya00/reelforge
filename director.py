@@ -189,9 +189,13 @@ plan may need few notes. Each note says what changed and why."""
 
 
 def planner_prompt(story: str, style: str, n_scenes: int, orientation: str,
-                   preset: str | None, pacing: str | None) -> str:
+                   preset: str | None, pacing: str | None, cast: str = "") -> str:
     pacing = pacing if pacing in PACING else DEFAULT_PACING
     parts = [f"STORY / IDEA:\n{story}"]
+    if cast:
+        parts.append("CAST (already designed and painted: use each of them in the story with exactly "
+                     "this id and name, and don't redesign their appearance, costume or voice; you may "
+                     f"add other characters):\n{cast}")
     brief = preset_brief(preset)
     if brief:
         parts.append(f"STYLE PRESET (starting point):\n{brief}")
@@ -203,7 +207,7 @@ def planner_prompt(story: str, style: str, n_scenes: int, orientation: str,
 
 # fields that belong to the project, not the story; the director never sees or changes them
 PROJECT_KEYS = ("orientation", "prompt_overrides", "selected_takes", "video_providers",
-                "director_notes", "brief", "planner")
+                "director_notes", "brief", "planner", "cast")
 
 
 def director_prompt(plan: dict) -> str:

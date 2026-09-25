@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import { motion } from "motion/react";
-import { Expand, ImageOff, Link2, PenLine, RefreshCw, RotateCcw, TriangleAlert, Wand2 } from "lucide-react";
+import { BookmarkCheck, BookmarkPlus, Expand, ImageOff, Link2, PenLine, RefreshCw, RotateCcw, TriangleAlert, Wand2 } from "lucide-react";
+import { useSWRConfig } from "swr";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge, Dialog, DialogContent, DialogDescription, DialogTitle, LiveBars, Textarea, Tip } from "@/components/ui/primitives";
 import { useJobs } from "@/lib/hooks";
 import { JobProgress } from "@/components/progress";
-import { url, type Asset, type Project } from "@/lib/api";
+import { api, url, type Asset, type Project } from "@/lib/api";
 import { cn, plural, usd } from "@/lib/utils";
 import { useProjectActions } from "./actions";
 
@@ -128,8 +130,15 @@ function AssetCard({ a, p, index, uses, onPrompt, onView }: { a: Asset; p: Proje
               </Badge>
             )}
             {a.overridden && <Badge tone="live">custom prompt</Badge>}
+            {a.kind === "character" && a.library_id && (
+              <Badge tone="ok">
+                <BookmarkCheck />
+                in library
+              </Badge>
+            )}
           </div>
         </div>
+        {a.kind === "character" && a.image && !generating && !a.library_id && <SaveToLibrary p={p} a={a} />}
         {!a.image || generating ? (
           <Tip content="Edit prompt">
             <Button variant="ghost" size="icon-sm" shape="pill" onClick={onPrompt} aria-label="Edit prompt">
@@ -139,6 +148,30 @@ function AssetCard({ a, p, index, uses, onPrompt, onView }: { a: Asset; p: Proje
         ) : null}
       </div>
     </motion.div>
+  );
+}
+
+function SaveToLibrary({ p, a }: { p: Project; a: Asset }) {
+  const { mutate } = useSWRConfig();
+  const [busy, setBusy] = React.useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.saveCharacter(p.id, a.id);
+      toast.success(`${a.name} saved to your library`, { description: "Cast them in any new film from the new-film box." });
+      mutate(`/api/projects/${p.id}`);
+      mutate("/api/library");
+    } catch (e) {
+      toast.error("Couldn't save to the library", { description: (e as Error).message });
+    }
+    setBusy(false);
+  };
+  return (
+    <Tip content="Save to library: reuse this character, exactly as painted, in other films">
+      <Button variant="ghost" size="icon-sm" shape="pill" onClick={save} disabled={busy} aria-label="Save to library">
+        <BookmarkPlus />
+      </Button>
+    </Tip>
   );
 }
 

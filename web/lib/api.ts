@@ -84,6 +84,18 @@ export interface Asset {
   image: string | null;
   status: ItemStatus;
   error: string | null;
+  library_id: string | null;
+}
+
+export interface LibraryCharacter {
+  id: string;
+  name: string;
+  appearance: string;
+  costume: string;
+  voice: string;
+  image: string | null;
+  source: { project: string; id: string };
+  saved: number;
 }
 
 export interface Review {
@@ -252,7 +264,7 @@ export const api = {
   checkConnection: () =>
     call<{ ok: boolean; message: string; models: Record<string, boolean> }>("POST", "/api/settings/check"),
   newFilm: (b: { story: string; style: string; scenes: number; orientation: Orientation; auto: boolean;
-                  preset: string | null; pacing: Pacing }) =>
+                  preset: string | null; pacing: Pacing; cast: string[] }) =>
     call<Job>("POST", "/api/projects", b),
   savePlan: (id: string, plan: Plan) => call<Project>("PUT", `/api/projects/${id}/plan`, { plan }),
   setPrompt: (id: string, item: string, prompt: string | null, provider?: string) =>
@@ -272,5 +284,7 @@ export const api = {
     call<Job>("POST", `/api/projects/${id}/scenes/${scene}/takes/${take}/review`),
   stitch: (id: string) => call<Job>("POST", `/api/projects/${id}/stitch`),
   reveal: (id: string) => call<{ ok: boolean }>("POST", `/api/projects/${id}/reveal`),
+  saveCharacter: (project: string, id: string) => call<LibraryCharacter>("POST", "/api/library/characters", { project, id }),
+  deleteCharacter: (id: string) => call<{ ok: boolean }>("DELETE", `/api/library/characters/${id}`),
   deleteProject: (id: string) => call<{ ok: boolean; moved_to: string }>("DELETE", `/api/projects/${id}`),
 };

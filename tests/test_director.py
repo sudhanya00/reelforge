@@ -106,3 +106,16 @@ def test_planner_output_has_no_in_clip_cuts_by_default():
 def test_director_knows_round_two_lessons():
     assert "implied" in director.DIRECTOR_SYSTEM or "imply" in director.DIRECTOR_SYSTEM
     assert "cross-dissolve" in director.DIRECTOR_SYSTEM and "multi_shot=false" in director.PLANNER_V2_SYSTEM
+
+
+def test_cast_survives_a_director_that_renames_or_drops_it():
+    cast = [{"id": "char_mira", "name": "Mira", "appearance": "saved look", "costume": "saved coat", "voice": "saved voice"}]
+    plan = copy.deepcopy(PLAN_V2)
+    plan["cast"] = cast
+    plan["characters"][0].update({"id": "char_m", "name": "mira", "appearance": "redesigned"})
+    plan["scenes"][0]["refs"] = ["char_m", "env_night"]
+    out = pl.enforce_cast(plan)
+    mira = next(c for c in out["characters"] if c["id"] == "char_mira")
+    assert mira["appearance"] == "saved look" and out["scenes"][0]["refs"][0] == "char_mira"
+    dropped = pl.enforce_cast({"cast": cast, "characters": [], "scenes": []})
+    assert dropped["characters"][0]["name"] == "Mira"

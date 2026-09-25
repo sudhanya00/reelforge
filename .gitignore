@@ -16,3 +16,5 @@ reelforge.stats.json
 experiments/*.log
 experiments/ab_takes.json
 experiments/model_takes.json
+library/
+library-demo/

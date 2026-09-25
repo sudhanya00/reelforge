@@ -142,6 +142,7 @@ def main() -> None:
     import uvicorn
     import server
     server.CONFIG["projects"] = ROOT / ("projects-demo" if a.demo else "projects")
+    server.CONFIG["library"] = ROOT / ("library-demo" if a.demo else "library")
     if a.demo:
         server.enable_demo()
         # fake timings must never feed real progress estimates

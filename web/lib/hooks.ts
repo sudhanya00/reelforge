@@ -3,10 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { fetcher, type AppState, type Job, type Project, type ProjectSummary, type ProviderInfo, type Resolution, type Settings } from "./api";
+import { fetcher, type AppState, type Job, type LibraryCharacter, type Project, type ProjectSummary, type ProviderInfo, type Resolution, type Settings } from "./api";
 
 export function useAppState() {
   return useSWR<AppState>("/api/state", fetcher, { revalidateOnFocus: true });
+}
+
+export function useLibrary() {
+  return useSWR<{ characters: LibraryCharacter[] }>("/api/library", fetcher);
 }
 
 export function useJobs() {

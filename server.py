@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import director
+import library as lib
 import pipeline as pl
 import styles
 import review as rv
@@ -35,12 +36,22 @@ PREFS_PATH = ROOT / "reelforge.settings.json"          # UI settings; gitignored
 STATS_PATH = ROOT / "reelforge.stats.json"             # measured step durations; gitignored
 
 # configured by launch.py (or tests) before the app serves requests
-CONFIG = {"projects": ROOT / "projects", "fake": False}
+CONFIG = {"projects": ROOT / "projects", "library": ROOT / "library", "fake": False}
 
 app = FastAPI(title="ReelForge")
 # the Next dev server (npm run dev) runs on another port
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
                    allow_methods=["*"], allow_headers=["*"])
+
+
+def the_library() -> lib.Library:
+    return lib.Library(CONFIG["library"])
+
+
+def library_view(c: dict) -> dict:
+    sheet = Path(c["sheet_path"]) if c.get("sheet_path") else None
+    return {**{k: v for k, v in c.items() if k != "sheet_path"},
+            "image": f"/library-files/characters/{c['id']}/sheet.png?v={int(sheet.stat().st_mtime)}" if sheet else None}
 
 
 def projects_dir() -> Path:
@@ -299,6 +310,9 @@ def project_view(proj: pl.Project) -> dict:
     overrides = plan.get("prompt_overrides", {})
     defaults = {j["id"]: j["prompt"] for j in pl.asset_jobs({**plan, "prompt_overrides": {}})}
     errors = item_errors(proj)
+    saved = {c["source"]["id"]: c["id"] for c in the_library().characters()
+             if c.get("source", {}).get("project") == pid}
+    cast = {c["id"] for c in plan.get("cast", [])}
 
     assets = []
     for j in pl.asset_jobs(plan):
@@ -313,6 +327,7 @@ def project_view(proj: pl.Project) -> dict:
             "image": file_url(proj, path) if path.exists() else None,
             "status": "generating" if generating else ("done" if path.exists() else "missing"),
             "error": errors.get(j["id"]),
+            "library_id": saved.get(j["id"]) or (j["id"] if j["id"] in cast else None),
         })
 
     scenes = []
@@ -483,6 +498,7 @@ class NewFilm(BaseModel):
     scenes: int = 6
     orientation: str | None = None
     preset: str | None = None                        # a styles.STYLE_PRESETS id
+    cast: list[str] = []                             # library character ids to use as saved
     pacing: str | None = None                        # calm | balanced | kinetic
     auto: bool = False                               # plan, then make everything
 
@@ -494,6 +510,10 @@ def create_project(body: NewFilm):
     s = current_settings()
     if body.orientation:
         s.orientation = body.orientation
+    try:
+        cast = [the_library().get(cid) for cid in body.cast]
+    except KeyError as e:
+        raise HTTPException(404, f"No library character {e}")
 
     def run(job: Job):
         client = client_for(s)
@@ -502,7 +522,8 @@ def create_project(body: NewFilm):
         proj = pl.new_project(client, s, body.story.strip(), body.style.strip(),
                               max(1, min(body.scenes, 20)), projects_dir(),
                               preset=body.preset if body.preset in styles.STYLE_PRESETS else None,
-                              pacing=body.pacing if body.pacing in styles.PACING else None)
+                              pacing=body.pacing if body.pacing in styles.PACING else None,
+                              cast=cast)
         job.project = proj.root.name
         job.claims = {"*"}
         job.log(f"Plan ready: {proj.load_plan()['title']}")
@@ -837,6 +858,41 @@ def poster(pid: str, path: str):
 # API: jobs
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# API: character library
+# --------------------------------------------------------------------------
+
+@app.get("/api/library")
+def get_library():
+    return {"characters": [library_view(c) for c in the_library().characters()]}
+
+
+class SaveCharacterIn(BaseModel):
+    project: str
+    id: str
+
+
+@app.post("/api/library/characters")
+def save_character(body: SaveCharacterIn):
+    proj = open_project(body.project)
+    try:
+        c = the_library().save_from_project(proj.root, proj.load_plan(), body.id)
+    except KeyError:
+        raise HTTPException(404, f"No character {body.id} in this film")
+    except FileNotFoundError as e:
+        raise HTTPException(400, str(e))
+    return library_view(c)
+
+
+@app.delete("/api/library/characters/{cid}")
+def delete_character(cid: str):
+    try:
+        the_library().delete(cid)
+    except KeyError:
+        raise HTTPException(404, f"No library character {cid}")
+    return {"ok": True}
+
+
 @app.get("/api/jobs")
 def list_jobs(project: str | None = None):
     jobs = [j for j in JOBS.values() if project is None or j.project == project]
@@ -868,6 +924,19 @@ class _ProjectFiles(StaticFiles):
 
 
 app.mount("/files", _ProjectFiles(), name="files")
+
+
+class _LibraryFiles(StaticFiles):
+    def __init__(self):
+        super().__init__(directory=str(ROOT), check_dir=False)
+
+    def get_path(self, scope):                       # noqa: D401
+        self.directory = str(the_library().root)
+        self.all_directories = [self.directory]
+        return super().get_path(scope)
+
+
+app.mount("/library-files", _LibraryFiles(), name="library-files")
 
 
 def mount_web() -> None:

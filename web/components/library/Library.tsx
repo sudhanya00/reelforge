@@ -4,12 +4,12 @@ import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
-import { ArrowUp, Check, Clapperboard, Film, Minus, Palette, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Trash2 } from "lucide-react";
+import { ArrowUp, Check, Clapperboard, Film, Minus, Palette, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Trash2, UserPlus, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge, Kbd, LiveBars, Meter, Segmented, Tip } from "@/components/ui/primitives";
+import { Badge, Kbd, LiveBars, Meter, Popover, PopoverContent, PopoverTrigger, Segmented, Tip } from "@/components/ui/primitives";
 import { useConfirmSpend } from "@/components/confirm";
 import { useRoute } from "@/components/shell";
-import { imageUsd, useAppState, useJobs, useProjects, videoUsd } from "@/lib/hooks";
+import { imageUsd, useAppState, useJobs, useLibrary, useProjects, videoUsd } from "@/lib/hooks";
 import { JobProgress } from "@/components/progress";
 import { useDeleteFilm } from "@/components/project/actions";
 import { api, url, type Job, type Orientation, type Pacing, type ProjectSummary, type Resolution } from "@/lib/api";
@@ -71,6 +71,7 @@ function Composer() {
   const [orientation, setOrientation] = React.useState<Orientation | null>(null);
   const [preset, setPreset] = React.useState<string | null>(null);
   const [pacing, setPacing] = React.useState<Pacing | null>(null);   // null = the preset's default
+  const [cast, setCast] = React.useState<string[]>([]);
   const [submitting, setSubmitting] = React.useState(false);
   const [waitingFor, setWaitingFor] = React.useState<string | null>(null);
   const { jobs } = useJobs();
@@ -94,11 +95,12 @@ function Composer() {
     if (auto && !(await confirm({ title: "Make the whole film?", usd: filmUsd, detail: `Roughly — the plan decides the exact number of scenes and references. Everything runs at ${s?.resolution}.`, action: "Make it" }))) return;
     setSubmitting(true);
     try {
-      const job = await api.newFilm({ story, style, scenes, orientation: orient, auto, preset, pacing: pace });
+      const job = await api.newFilm({ story, style, scenes, orientation: orient, auto, preset, pacing: pace, cast });
       setWaitingFor(job.id);
       globalMutate("/api/jobs");
       setStory("");
       setStyle("");
+      setCast([]);
       toast(auto ? "Making your film" : "Writing the plan", { description: auto ? "Follow along in Activity. It can be resumed if anything fails." : "Usually under a minute." });
     } catch (e) {
       toast.error("Couldn't start", { description: (e as Error).message });
@@ -155,6 +157,7 @@ function Composer() {
             ))}
           </div>
         )}
+        <CastPicker cast={cast} setCast={setCast} />
         <div className="flex items-center gap-2 px-5 pb-3">
           <Palette className="size-4 shrink-0 text-muted-foreground" />
           <input
@@ -241,6 +244,58 @@ function Composer() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- cast from the library
+
+function CastPicker({ cast, setCast }: { cast: string[]; setCast: (c: string[]) => void }) {
+  const { data } = useLibrary();
+  const chars = data?.characters ?? [];
+  if (!chars.length) return null;
+  const chosen = chars.filter((c) => cast.includes(c.id));
+  const toggle = (id: string) => setCast(cast.includes(id) ? cast.filter((x) => x !== id) : [...cast, id]);
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-5 pb-2">
+      <Users className="size-4 shrink-0 text-muted-foreground" />
+      {chosen.map((c) => (
+        <span key={c.id} className="flex items-center gap-1.5 rounded-full border py-0.5 pr-1 pl-0.5 text-xs">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {c.image && <img src={url(c.image)} alt="" className="size-5 rounded-full object-cover object-top" />}
+          {c.name}
+          <button onClick={() => toggle(c.id)} className="rounded-full p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={`Remove ${c.name}`}>
+            <X className="size-3" />
+          </button>
+        </span>
+      ))}
+      <Popover>
+        <PopoverTrigger asChild>
+          <button className="flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground hover:border-foreground/30 hover:text-foreground">
+            <UserPlus className="size-3.5" />
+            {chosen.length ? "Add" : "Cast from library"}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-80 p-2">
+          <p className="px-2 pt-1 pb-2 text-xs text-muted-foreground">Saved characters appear exactly as painted, at no image cost.</p>
+          <div className="max-h-72 space-y-0.5 overflow-y-auto scrollbar-thin">
+            {chars.map((c) => {
+              const on = cast.includes(c.id);
+              return (
+                <button key={c.id} onClick={() => toggle(c.id)} className={cn("flex w-full items-center gap-3 rounded-lg p-1.5 text-left hover:bg-accent", on && "bg-accent")}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {c.image ? <img src={url(c.image)} alt="" className="h-10 w-16 rounded-md object-cover object-top" /> : <span className="h-10 w-16 rounded-md bg-muted" />}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{c.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{c.appearance}</span>
+                  </span>
+                  {on && <Check className="size-4 text-ok" />}
+                </button>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

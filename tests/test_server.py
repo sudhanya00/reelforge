@@ -16,6 +16,7 @@ def fake(mp4_bytes):
 @pytest.fixture
 def api(tmp_path, monkeypatch, fake):
     monkeypatch.setitem(server.CONFIG, "projects", tmp_path / "projects")
+    monkeypatch.setitem(server.CONFIG, "library", tmp_path / "library")
     monkeypatch.setitem(server.CONFIG, "fake", True)
     monkeypatch.setattr(server, "PREFS_PATH", tmp_path / "prefs.json")
     monkeypatch.setattr(server, "_fake", fake)
@@ -282,3 +283,27 @@ def test_saving_the_plan_normalises_beats(api, pid):
     v = api.put(f"/api/projects/{pid}/plan", json={"plan": plan}).json()
     sc = v["plan"]["scenes"][0]
     assert [b["t_start"] for b in sc["beats"]] == [0, 3] and sc["duration_s"] == 8
+
+
+def test_character_library_save_reuse_and_delete(api, pid):
+    wait(api, api.post(f"/api/projects/{pid}/assets", json={"ids": ["char_a"]}).json())
+    c = api.post("/api/library/characters", json={"project": pid, "id": "char_a"}).json()
+    assert c["id"] == "char_a" and c["name"] == "Asha" and c["image"].startswith("/library-files/")
+    assert api.get(c["image"]).status_code == 200
+    again = api.post("/api/library/characters", json={"project": pid, "id": "char_a"}).json()
+    assert again["id"] == "char_a" and len(api.get("/api/library").json()["characters"]) == 1   # updated, not copied
+    asset = next(a for a in api.get(f"/api/projects/{pid}").json()["assets"] if a["id"] == "char_a")
+    assert asset["library_id"] == "char_a"
+
+    # a new film cast with her: her sheet is copied in, not painted, and her description is kept
+    j = wait(api, api.post("/api/projects", json={"story": "x", "scenes": 3, "cast": ["char_a"]}).json())
+    new = j["result"]["project"]
+    v = api.get(f"/api/projects/{new}").json()
+    a = next(a for a in v["assets"] if a["id"] == "char_a")
+    assert a["image"] and a["library_id"] == "char_a" and v["plan"]["cast"][0]["name"] == "Asha"
+    assert next(ch for ch in v["plan"]["characters"] if ch["id"] == "char_a")["appearance"] == "30s woman"
+
+    assert api.delete("/api/library/characters/char_a").json()["ok"]
+    assert api.get("/api/library").json()["characters"] == []
+    assert api.post("/api/library/characters", json={"project": pid, "id": "char_zz"}).status_code == 404
+    assert api.post("/api/projects", json={"story": "x", "cast": ["char_nope"]}).status_code == 404
