@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import director
+import influencers as infl
 import library as lib
 import pipeline as pl
 import styles
@@ -129,7 +130,7 @@ DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 1
                      "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360,
                      "video_veo-fast_720p": 60, "video_veo-fast_1080p": 90,
                      "video_veo_720p": 90, "video_veo_1080p": 120,
-                     "review": 40, "direct": 60}
+                     "review": 40, "direct": 60, "design": 30, "script": 30}
 
 
 def video_key(provider: str, resolution: str) -> str:
@@ -839,7 +840,10 @@ def poster(pid: str, path: str):
     video = (proj.root / path).resolve()
     if proj.root.resolve() not in video.parents or video.suffix != ".mp4" or not video.exists():
         raise HTTPException(404, "No such video")
-    out = proj.root / "frames" / "posters" / (path.replace("/", "_").removesuffix(".mp4") + ".jpg")
+    return poster_file(video, proj.root / "frames" / "posters" / (path.replace("/", "_").removesuffix(".mp4") + ".jpg"))
+
+
+def poster_file(video: Path, out: Path) -> FileResponse:
     if not out.exists() or out.stat().st_mtime < video.stat().st_mtime:
         if not shutil.which("ffmpeg"):
             raise HTTPException(404, "ffmpeg is needed for posters")
@@ -891,6 +895,360 @@ def delete_character(cid: str):
     except KeyError:
         raise HTTPException(404, f"No library character {cid}")
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# API: influencers
+# --------------------------------------------------------------------------
+
+def the_influencers() -> infl.Influencers:
+    return infl.Influencers(CONFIG["library"])
+
+
+def inf_key(iid: str) -> str:
+    """Jobs for an influencer are grouped under this pseudo-project."""
+    return f"inf:{iid}"
+
+
+def open_influencer(iid: str) -> dict:
+    try:
+        return the_influencers().get(iid)
+    except KeyError:
+        raise HTTPException(404, f"No influencer {iid}")
+
+
+def open_video(iid: str, vid: str) -> pl.Project:
+    open_influencer(iid)
+    try:
+        return the_influencers().video(iid, vid)
+    except (KeyError, FileNotFoundError):
+        raise HTTPException(404, f"No video {vid}")
+
+
+def lib_url(path: Path) -> str:
+    rel = path.relative_to(the_influencers().root.parent).as_posix()
+    return f"/library-files/{rel}?v={int(path.stat().st_mtime)}"
+
+
+def reel_poster_url(iid: str, video: Path) -> str:
+    rel = video.relative_to(the_influencers().dir(iid)).as_posix()
+    return f"/api/influencers/{iid}/poster?path={rel}&v={int(video.stat().st_mtime)}"
+
+
+def log_usd(path: Path) -> float:
+    if not path.exists():
+        return 0.0
+    return round(sum(json.loads(l).get("cost_usd") or 0 for l in path.read_text(encoding="utf-8").splitlines()), 2)
+
+
+def reel_estimate(s: pl.Settings, plan: dict) -> dict:
+    """Extensions are new here: until a live run shows how they're billed, give both ends.
+    low = each turn bills only its new seconds; high = each turn bills the whole take so far."""
+    secs = [sg["seconds"] for sg in plan["segments"]]
+    vp = providers.video_provider("gemini-omni", s)
+    res = vp.resolution_for(s.resolution)
+    per_s = vp.price_per_s(res)
+    cumulative = sum(sum(secs[:i + 1]) for i in range(len(secs)))
+    return {"seconds": sum(secs), "turns": len(secs), "resolution": res,
+            "low_usd": round(per_s * sum(secs), 2), "high_usd": round(per_s * cumulative, 2)}
+
+
+def video_view(iid: str, proj: pl.Project, full: bool = False) -> dict:
+    plan = proj.load_plan()
+    final = proj.root / "final.mp4"
+    takes = proj.takes("reel")
+    shown = final if final.exists() else (takes[-1] if takes else None)
+    out = {"id": proj.root.name, "title": plan["title"], "hook": plan.get("hook", ""),
+           "format": plan.get("format"), "seconds": sum(sg["seconds"] for sg in plan["segments"]),
+           "final": lib_url(final) if final.exists() else None,
+           "poster": reel_poster_url(iid, shown) if shown else None,
+           "cost_usd": pl.project_costs(proj)["usd"],
+           "busy": proj.root.name in running_claims(inf_key(iid)),
+           "updated": max(p.stat().st_mtime for p in (proj.plan_path, proj.root / "log.jsonl") if p.exists())}
+    if full:
+        turns = []
+        for t in takes:
+            mp = t.with_suffix(".json")
+            meta = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
+            turns.append({"name": t.name, "url": lib_url(t), "segment": meta.get("segment"),
+                          "duration_s": meta.get("duration_s"), "cost_usd": meta.get("cost_usd"),
+                          "prompt": meta.get("prompt"), "extends": meta.get("extends")})
+        out.update({"caption": plan.get("caption", ""), "brief": plan.get("brief", {}),
+                    "segments": plan["segments"], "turns": turns,
+                    "extension_mode": plan.get("extension_mode"), "error": item_errors(proj).get("reel"),
+                    "costs": pl.project_costs(proj), "estimate": reel_estimate(current_settings(), plan)})
+    return out
+
+
+def influencer_view(inf: dict, full: bool = False) -> dict:
+    lib_ = the_influencers()
+    iid = inf["id"]
+    face = lib_.image(iid, "face")
+    videos = lib_.videos(iid)
+    identity_usd = log_usd(lib_.dir(iid) / "log.jsonl")
+    busy = running_claims(inf_key(iid))
+    out = {"id": iid, "profile": inf["profile"], "created": inf.get("created"),
+           "face": lib_url(face) if face.exists() else None,
+           "identity_done": sum(lib_.image(iid, v).exists() for v in infl.VIEW_IDS),
+           "identity_total": len(infl.VIEW_IDS), "videos_count": len(videos),
+           "cost_usd": round(identity_usd + sum(pl.project_costs(v)["usd"] for v in videos), 2),
+           "busy": bool(busy)}
+    if full:
+        errors = inf.get("identity_errors", {})
+        overrides = inf.get("prompt_overrides", {})
+        out["identity"] = [{
+            "view": v, "aspect": aspect, "from_face": from_face,
+            "image": lib_url(lib_.image(iid, v)) if lib_.image(iid, v).exists() else None,
+            "status": "generating" if v in busy else ("done" if lib_.image(iid, v).exists() else "missing"),
+            "error": errors.get(v),
+            "prompt": overrides.get(v) or infl.identity_prompt(inf["profile"], v),
+            "overridden": v in overrides,
+        } for v, aspect, from_face, _ in infl.IDENTITY]
+        out["identity_usd"] = identity_usd
+        out["videos"] = [video_view(iid, v) for v in videos]
+    return out
+
+
+@app.get("/api/influencers")
+def list_influencers():
+    lib_ = the_influencers()
+    return {"influencers": [influencer_view(i) for i in lib_.all()],
+            "design_usd": log_usd(lib_.root / "design_log.jsonl"),
+            "fields": [{"id": k, "label": label} for k, label in infl.PROFILE_FIELDS],
+            "formats": [{"id": k, "label": v["label"]} for k, v in infl.FORMATS.items()]}
+
+
+class DesignIn(BaseModel):
+    profile: dict[str, str] = {}
+    concept: str = ""
+
+
+@app.post("/api/influencers/design")
+def design_influencer(body: DesignIn):
+    """AI fills the fields left empty (a job: the planner takes ~30 s)."""
+    s = current_settings()
+
+    def run(job: Job):
+        job.step("design", "Designing the influencer")
+        out, usage = infl.fill_profile(client_for(s), s, body.profile, body.concept)
+        cost = pl.call_cost(s.planner_model, usage)
+        the_influencers().log_design(model=s.planner_model, usage=usage, cost_usd=cost)
+        return {"profile": out, "cost_usd": cost}
+
+    return submit("design", "Designing an influencer", None, set(), run).view()
+
+
+class InfluencerIn(BaseModel):
+    profile: dict[str, str]
+
+
+def clean_profile(p: dict) -> dict:
+    out = {k: str(p.get(k, "")).strip() for k in infl.KEYS}
+    if not out["name"]:
+        raise HTTPException(400, "Give the influencer a name")
+    if out["handle"] and not out["handle"].startswith("@"):
+        out["handle"] = "@" + out["handle"]
+    return out
+
+
+@app.post("/api/influencers")
+def create_influencer(body: InfluencerIn):
+    return influencer_view(the_influencers().create(clean_profile(body.profile)), full=True)
+
+
+@app.get("/api/influencers/{iid}")
+def get_influencer(iid: str):
+    return influencer_view(open_influencer(iid), full=True)
+
+
+@app.put("/api/influencers/{iid}")
+def put_influencer(iid: str, body: InfluencerIn):
+    with plan_lock(inf_key(iid)):
+        inf = open_influencer(iid)
+        inf["profile"] = clean_profile(body.profile)
+        the_influencers().save(inf)
+    return influencer_view(inf, full=True)
+
+
+class IdentityPromptIn(BaseModel):
+    view: str
+    prompt: str | None = None                        # empty resets to the generated prompt
+
+
+@app.put("/api/influencers/{iid}/identity/prompt")
+def put_identity_prompt(iid: str, body: IdentityPromptIn):
+    if body.view not in infl.VIEW_IDS:
+        raise HTTPException(404, "No such view")
+    with plan_lock(inf_key(iid)):
+        inf = open_influencer(iid)
+        ov = inf.setdefault("prompt_overrides", {})
+        if body.prompt and body.prompt.strip():
+            ov[body.view] = body.prompt.strip()
+        else:
+            ov.pop(body.view, None)
+        the_influencers().save(inf)
+    return influencer_view(inf, full=True)
+
+
+class IdentityIn(BaseModel):
+    views: list[str] | None = None
+    force: bool = False
+
+
+@app.post("/api/influencers/{iid}/identity")
+def paint_identity(iid: str, body: IdentityIn):
+    inf = open_influencer(iid)
+    lib_ = the_influencers()
+    views = [v for v in (body.views or infl.VIEW_IDS) if v in infl.VIEW_IDS]
+    todo = [v for v in views if body.force or not lib_.image(iid, v).exists()]
+    if not todo:
+        raise HTTPException(400, "Those images already exist")
+    needs_face = any(from_face for v, _, from_face, _ in infl.IDENTITY if v in todo)
+    if needs_face and "face" not in todo and not lib_.image(iid, "face").exists():
+        raise HTTPException(400, "Paint the face first: the other views are painted from it")
+    s = current_settings()
+    name = inf["profile"]["name"]
+
+    def run(job: Job):
+        done = 0
+        job.step("image", f"Painting {name}", 0, len(todo), record=False)
+
+        def progress(view, status):
+            nonlocal done
+            done += 1
+            job.log(f"{view}: {status}")
+            job.step("image", f"Painting {name}", done, len(todo), record=False)
+        res = infl.paint_identity(client_for(s), s, lib_, iid, views=todo, force=body.force,
+                                  on_progress=progress)
+        failed = {v: r.split(": ", 1)[1] for v, r in res.items() if r.startswith(("failed", "fatal"))}
+        with plan_lock(inf_key(iid)):
+            cur = lib_.get(iid)
+            errs = {v: e for v, e in cur.get("identity_errors", {}).items() if v not in res}
+            cur["identity_errors"] = {**errs, **failed}
+            lib_.save(cur)
+        if failed and len(failed) == len(todo):
+            raise RuntimeError(next(iter(failed.values())))
+        return {"results": res}
+
+    return submit("identity", f"Painting {name}", inf_key(iid), set(todo), run).view()
+
+
+@app.delete("/api/influencers/{iid}")
+def delete_influencer(iid: str):
+    """To the Recycle Bin, identity pack and videos included."""
+    open_influencer(iid)
+    if running_claims(inf_key(iid)):
+        raise HTTPException(409, "Something for this influencer is still generating. Wait for it to finish.")
+    from send2trash import send2trash
+    send2trash(str(the_influencers().dir(iid)))
+    return {"ok": True}
+
+
+class NewVideoIn(BaseModel):
+    format: str = "talking_head"
+    topic: str
+    points: str = ""
+    length_s: int = 30
+
+
+@app.post("/api/influencers/{iid}/videos")
+def new_video(iid: str, body: NewVideoIn):
+    inf = open_influencer(iid)
+    if body.format not in infl.FORMATS:
+        raise HTTPException(400, f"Unknown format {body.format}")
+    if not body.topic.strip():
+        raise HTTPException(400, "What's the video about?")
+    s = current_settings()
+
+    def run(job: Job):
+        job.step("script", f"Writing in {inf['profile']['name']}'s voice")
+        proj = infl.write_script(client_for(s), s, the_influencers(), iid, body.format, body.topic.strip(),
+                                 body.points.strip(), body.length_s)
+        job.log(f"Script: {proj.load_plan()['title']}")
+        return {"video": proj.root.name}
+
+    return submit("script", "Writing a script", inf_key(iid), {"script"}, run).view()
+
+
+@app.get("/api/influencers/{iid}/videos/{vid}")
+def get_video(iid: str, vid: str):
+    return video_view(iid, open_video(iid, vid), full=True)
+
+
+class ScriptIn(BaseModel):
+    title: str | None = None
+    caption: str | None = None
+    segments: list[dict] | None = None
+
+
+@app.put("/api/influencers/{iid}/videos/{vid}")
+def put_script(iid: str, vid: str, body: ScriptIn):
+    proj = open_video(iid, vid)
+    if vid in running_claims(inf_key(iid)):
+        raise HTTPException(409, "This video is being shot. Wait for it to finish.")
+    if body.segments is not None and not 1 <= len(body.segments) <= 4:
+        raise HTTPException(400, "A reel has 1 to 4 segments (10-40 s)")
+
+    def apply(plan):
+        if body.title is not None:
+            plan["title"] = body.title.strip() or plan["title"]
+        if body.caption is not None:
+            plan["caption"] = body.caption
+        if body.segments is not None:
+            segs = [{"id": "", "seconds": 10,
+                     "lines": [str(x).strip() for x in sg.get("lines", []) if str(x).strip()],
+                     "delivery": str(sg.get("delivery", "")).strip(),
+                     "action": str(sg.get("action", "")).strip()} for sg in body.segments]
+            plan["segments"] = infl.normalize_segments(segs, len(segs) * 10)
+            if segs[0]["lines"]:
+                plan["hook"] = segs[0]["lines"][0]
+            plan.pop("prompt_overrides", None)       # prompts follow the new script
+
+    update_plan(proj, apply)
+    return video_view(iid, proj, full=True)
+
+
+@app.post("/api/influencers/{iid}/videos/{vid}/shoot")
+def shoot_video(iid: str, vid: str):
+    inf = open_influencer(iid)
+    proj = open_video(iid, vid)
+    if not the_influencers().image(iid, "face").exists():
+        raise HTTPException(400, "Paint the identity pack first (at least the face)")
+    s = current_settings()
+    vp = providers.video_provider("gemini-omni", s)
+    key = video_key(vp.id, vp.resolution_for(s.resolution))
+
+    def run(job: Job):
+        def step(kind, label, done, total):
+            job.step(kind, label, done, total, key=key if kind == "video" else kind)
+        try:
+            final = infl.shoot_reel(client_for(s), s, the_influencers(), iid, proj, log=job.log, step=step)
+        except Exception as e:
+            record_failures(proj, {"reel": pl.friendly_error(e)})
+            raise
+        return {"final": final.name}
+
+    return submit("reel", f"Shooting {inf['profile']['name']}'s video", inf_key(iid), {vid}, run).view()
+
+
+@app.delete("/api/influencers/{iid}/videos/{vid}")
+def delete_video(iid: str, vid: str):
+    proj = open_video(iid, vid)
+    if vid in running_claims(inf_key(iid)):
+        raise HTTPException(409, "This video is being shot. Wait for it to finish.")
+    from send2trash import send2trash
+    send2trash(str(proj.root))
+    return {"ok": True}
+
+
+@app.get("/api/influencers/{iid}/poster")
+def influencer_poster(iid: str, path: str):
+    open_influencer(iid)
+    root = the_influencers().dir(iid)
+    video = (root / path).resolve()
+    if root.resolve() not in video.parents or video.suffix != ".mp4" or not video.exists():
+        raise HTTPException(404, "No such video")
+    return poster_file(video, video.parent / "posters" / f"{video.stem}.jpg")
 
 
 @app.get("/api/jobs")

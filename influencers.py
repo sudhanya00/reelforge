@@ -232,6 +232,12 @@ class Influencers:
         with pl.Project._log_lock, open(self.dir(iid) / "log.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
+    def log_design(self, **entry) -> None:
+        """Designer calls happen before the influencer exists; their cost goes here."""
+        entry.update(kind="plan", planner="design", ts=datetime.now().isoformat(timespec="seconds"))
+        with pl.Project._log_lock, open(self.root / "design_log.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
     def image(self, iid: str, view: str) -> Path:
         return self.dir(iid) / "identity" / f"{view}.png"
 

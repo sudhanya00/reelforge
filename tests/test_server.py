@@ -307,3 +307,75 @@ def test_character_library_save_reuse_and_delete(api, pid):
     assert api.get("/api/library").json()["characters"] == []
     assert api.post("/api/library/characters", json={"project": pid, "id": "char_zz"}).status_code == 404
     assert api.post("/api/projects", json={"story": "x", "cast": ["char_nope"]}).status_code == 404
+
+
+# ---------------------------------------------------------------- influencers
+
+def test_influencer_design_create_paint_script_shoot(api, fake, monkeypatch):
+    import send2trash
+    j = wait(api, api.post("/api/influencers/design", json={"profile": {"name": "Dev"}, "concept": "gym"}).json())
+    assert j["status"] == "done" and j["result"]["profile"]["name"] == "Dev"
+    assert api.get("/api/influencers").json()["design_usd"] > 0
+
+    assert api.post("/api/influencers", json={"profile": {"name": " "}}).status_code == 400
+    inf = api.post("/api/influencers", json={"profile": {**j["result"]["profile"], "handle": "dev"}}).json()
+    iid = inf["id"]
+    assert inf["profile"]["handle"] == "@dev" and inf["identity_done"] == 0
+    assert [v["status"] for v in inf["identity"]] == ["missing"] * 5
+
+    # the side views need the face; the face comes first
+    assert api.post(f"/api/influencers/{iid}/identity", json={"views": ["profile"]}).status_code == 400
+    j = wait(api, api.post(f"/api/influencers/{iid}/identity", json={}).json())
+    assert j["status"] == "done", j
+    inf = api.get(f"/api/influencers/{iid}").json()
+    assert inf["identity_done"] == 5 and inf["face"].startswith("/library-files/influencers/")
+    assert api.get(inf["face"]).status_code == 200 and inf["identity_usd"] > 0
+
+    # a custom prompt for one view, then reset
+    v = api.put(f"/api/influencers/{iid}/identity/prompt", json={"view": "face", "prompt": "mine"}).json()
+    assert v["identity"][0]["prompt"] == "mine" and v["identity"][0]["overridden"]
+    v = api.put(f"/api/influencers/{iid}/identity/prompt", json={"view": "face", "prompt": ""}).json()
+    assert not v["identity"][0]["overridden"]
+
+    j = wait(api, api.post(f"/api/influencers/{iid}/videos", json={"topic": "pancakes", "length_s": 20}).json())
+    assert j["status"] == "done", j
+    vid = j["result"]["video"]
+    video = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
+    assert [sg["id"] for sg in video["segments"]] == ["p1", "p2"]
+    est = video["estimate"]
+    assert est["turns"] == 2 and est["high_usd"] > est["low_usd"] > 0
+
+    # edit the script: three segments now
+    segs = video["segments"] + [{"lines": ["Bye!"], "delivery": "warm", "action": "waves"}]
+    video = api.put(f"/api/influencers/{iid}/videos/{vid}", json={"segments": segs, "caption": "new"}).json()
+    assert video["seconds"] == 30 and video["caption"] == "new" and video["segments"][2]["id"] == "p3"
+    assert api.put(f"/api/influencers/{iid}/videos/{vid}", json={"segments": segs * 2}).status_code == 400
+
+    if HAS_FFMPEG:
+        j = wait(api, api.post(f"/api/influencers/{iid}/videos/{vid}/shoot").json())
+        assert j["status"] == "done", j
+        video = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
+        assert video["final"] and len(video["turns"]) == 3 and video["cost_usd"] > 0
+        assert api.get(video["poster"]).status_code == 200
+        lst = api.get("/api/influencers").json()["influencers"]
+        assert lst[0]["videos_count"] == 1 and lst[0]["cost_usd"] > inf["identity_usd"]
+
+    trashed = []
+    monkeypatch.setattr(send2trash, "send2trash", lambda p: trashed.append(p))
+    assert api.delete(f"/api/influencers/{iid}/videos/{vid}").json()["ok"]
+    assert api.delete(f"/api/influencers/{iid}").json()["ok"] and len(trashed) == 2
+
+
+def test_influencer_shoot_needs_identity_and_records_failures(api, fake):
+    inf = api.post("/api/influencers", json={"profile": {"name": "Ana"}}).json()
+    iid = inf["id"]
+    j = wait(api, api.post(f"/api/influencers/{iid}/videos", json={"topic": "x", "length_s": 10}).json())
+    vid = j["result"]["video"]
+    assert api.post(f"/api/influencers/{iid}/videos/{vid}/shoot").status_code == 400
+    wait(api, api.post(f"/api/influencers/{iid}/identity", json={"views": ["face"]}).json())
+    fake.errors["video"] = [interactions_error(400, "blocked by safety")]
+    j = wait(api, api.post(f"/api/influencers/{iid}/videos/{vid}/shoot").json())
+    assert j["status"] == "failed"
+    assert api.get(f"/api/influencers/{iid}/videos/{vid}").json()["error"]
+    assert api.get("/api/influencers/nobody").status_code == 404
+    assert api.get(f"/api/influencers/{iid}/videos/..%2F..").status_code == 404
