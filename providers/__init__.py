@@ -5,8 +5,9 @@ from .base import (ImageProvider, ImageResult, ProviderError, Ref, Shot, Submiss
                    VideoProvider, VideoResult)
 from .gemini import GeminiOmniVideo, NanoBananaImage
 from .kling import KlingOmniVideo
+from .veo import VeoFastVideo, VeoVideo
 
-VIDEO: dict[str, type[VideoProvider]] = {p.id: p for p in (GeminiOmniVideo, KlingOmniVideo)}
+VIDEO: dict[str, type[VideoProvider]] = {p.id: p for p in (GeminiOmniVideo, VeoFastVideo, VeoVideo, KlingOmniVideo)}
 IMAGE: dict[str, type[ImageProvider]] = {p.id: p for p in (NanoBananaImage,)}
 DEFAULT_VIDEO = GeminiOmniVideo.id
 

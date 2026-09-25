@@ -79,6 +79,8 @@ class VideoProvider:
     id: str = ""
     label: str = ""
     caps: VideoCaps
+    # which references to keep first when a shot has more than caps.max_refs
+    ref_priority: tuple[str, ...] = ("environment", "character", "prop")
 
     def __init__(self, settings, client=None):
         self.s = settings

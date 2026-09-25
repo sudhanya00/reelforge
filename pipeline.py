@@ -56,10 +56,14 @@ class Settings:
     MODELS: ClassVar[dict[str, dict[str, str]]] = {
         "gemini": {"planner_model": "gemini-3.1-pro-preview",
                    "image_model": "gemini-3-pro-image-preview",      # Nano Banana Pro
-                   "video_model": "gemini-omni-1.1-flash"},
+                   "video_model": "gemini-omni-1.1-flash",
+                   "veo_model": "veo-3.1-generate-preview",
+                   "veo_fast_model": "veo-3.1-fast-generate-preview"},
         "vertex": {"planner_model": "gemini-3.1-pro-preview",
                    "image_model": "gemini-3-pro-image",              # GA id on Vertex
-                   "video_model": "gemini-omni-1.1-flash-preview"},
+                   "video_model": "gemini-omni-1.1-flash-preview",
+                   "veo_model": "veo-3.1-generate-001",             # us-central1 (checked 2026-09-26)
+                   "veo_fast_model": "veo-3.1-fast-generate-001"},
     }
     # USD list prices from ai.google.dev/gemini-api/docs/pricing (2026-09-25); Vertex assumed
     # the same. Token prices are per 1M; thinking tokens bill at the "thoughts" rate if given,
@@ -72,6 +76,11 @@ class Settings:
                                "per_image": {"1K": 0.134, "2K": 0.134, "4K": 0.24}},
         "gemini-omni-1.1-flash": {"input": 1.50, "output": 17.50},
         "gemini-omni-1.1-flash-preview": {"input": 1.50, "output": 17.50},
+        # ai.google.dev/gemini-api/docs/pricing (2026-09-26); per second, audio included
+        **{m: {"per_s": {"720p": 0.40, "1080p": 0.40, "4k": 0.60}}
+           for m in ("veo-3.1-generate-001", "veo-3.1-generate-preview")},
+        **{m: {"per_s": {"720p": 0.10, "1080p": 0.12, "4k": 0.30}}
+           for m in ("veo-3.1-fast-generate-001", "veo-3.1-fast-generate-preview")},
         # kling.ai/document-api/pricing/base/video (2026-09-25); per second of video
         "kling-3.0-omni": {"usd_per_unit": 0.14,
                            "per_s": {"720p": 0.084, "1080p": 0.112, "4k": 0.42},
@@ -85,12 +94,15 @@ class Settings:
     planner_model: str = ""                              # "" = backend default
     image_model: str = ""
     video_model: str = ""
+    veo_model: str = ""
+    veo_fast_model: str = ""
+    veo_location: str = "us-central1"                    # Veo isn't served from "global" on Vertex
     orientation: str = "9:16"                            # "9:16" | "16:9"
     resolution: str = "720p"                             # 360p | 720p | 1080p | 4k
     image_size: str = "2K"                               # 1K | 2K | 4K
     video_timeout_s: int = 900
     # which model shoots scenes by default (a scene can override it); see providers/
-    video_provider: str = "gemini-omni"                  # gemini-omni | kling
+    video_provider: str = "gemini-omni"                  # gemini-omni | veo-fast | veo | kling
     image_provider: str = "nano-banana"
     kling_model: str = "kling-3.0-omni"
     kling_audio: bool = True                             # native audio (costs more on Kling)
@@ -684,10 +696,10 @@ def build_shot(plan: dict, proj: Project, scene: dict, s: Settings, client=None,
     no ffmpeg frame extraction (the first frame is assumed if one would be used)."""
     vp = providers.video_provider(provider or scene_provider(plan, scene["id"], s), s, client)
     idx = _lookup(plan)
-    # environments first, then characters, then props; skip refs with no image yet
-    order = {"environments": 0, "characters": 1, "props": 2}
+    # in the provider's priority order (it keeps only its first max_refs); skip refs with no image yet
+    rank = {kind: i for i, kind in enumerate(vp.ref_priority)}
     ref_ids = sorted([r for r in scene["refs"] if r in idx and proj.asset_path(r).exists()],
-                     key=lambda r: order[idx[r][0]])[: vp.caps.max_refs]
+                     key=lambda r: rank[idx[r][0][:-1]])[: vp.caps.max_refs]
     refs = [Ref(id=r, kind=idx[r][0][:-1], name=idx[r][1]["name"],
                 path=proj.asset_path(r), note=idx[r][1].get("time_and_weather", ""))
             for r in ref_ids]

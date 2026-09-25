@@ -2,6 +2,7 @@
 import json
 
 import pytest
+from google.genai import types
 
 import pipeline as pl
 import providers
@@ -31,7 +32,7 @@ def posts(k):
 def test_catalog_lists_providers_with_setup_state(s, monkeypatch):
     monkeypatch.delenv("KLING_API_KEY", raising=False)
     cat = {p["id"]: p for p in providers.catalog(s)}
-    assert set(cat) == {"gemini-omni", "kling"}
+    assert set(cat) == {"gemini-omni", "veo-fast", "veo", "kling"}
     assert cat["gemini-omni"]["configured"] and not cat["kling"]["configured"]
     assert "KLING_API_KEY" in cat["kling"]["setup"]
     assert cat["kling"]["price_per_s"]["720p"] == 0.112          # with native audio
@@ -189,3 +190,87 @@ def test_estimates_follow_each_scenes_provider(proj, s):
     k = pl.estimate_video_usd(s, 6, "kling")
     assert k == pytest.approx(0.112 * 6, abs=0.01)   # 360p asked, Kling bills its 720p
     assert after == pytest.approx(before - omni + k, abs=0.02)
+
+
+# ---------------------------------------------------------------- Veo
+
+@pytest.fixture
+def veo(monkeypatch, mp4_bytes):
+    import providers.veo as veo_mod
+    from fakes import FakeVeo
+    v = FakeVeo(mp4_bytes)
+    monkeypatch.setattr(veo_mod, "CLIENT_FACTORY", lambda s: v)
+    monkeypatch.setattr(veo_mod.time, "sleep", lambda s: None)
+    return v
+
+
+def on(proj, provider, *scene_ids):
+    plan = proj.load_plan()
+    plan["video_providers"] = {sid: provider for sid in scene_ids}
+    proj.save_plan(plan)
+
+
+def test_veo_fast_request_and_cost(proj, client, s, veo):
+    pl.generate_assets(client, s, proj)
+    on(proj, "veo-fast", "s02")                         # refs: char_a, prop_cup, env_night
+    out = pl.generate_take(client, s, proj, "s02")
+    call = veo.calls[0]
+    cfg = call["config"]
+    assert call["model"] == "veo-3.1-fast-generate-preview"      # the Gemini API id (tests use that backend)
+    assert (cfg.resolution, cfg.duration_seconds, cfg.aspect_ratio) == ("720p", 6, "16:9")   # 360p -> 720p, 5 s -> 6 s
+    assert len(cfg.reference_images) == 3 and cfg.reference_images[0].reference_type == types.VideoGenerationReferenceType.ASSET
+    assert "CGI" in cfg.negative_prompt and "melting hands" in cfg.negative_prompt
+    assert "looks exactly like the person in the reference image" in call["source"].prompt
+    meta = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    assert meta["provider"] == "veo-fast" and meta["cost_usd"] == pytest.approx(0.60)
+
+
+def test_veo_keeps_characters_first_when_refs_overflow(proj, client, s, veo):
+    plan = proj.load_plan()
+    plan["characters"].append({"id": "char_b", "name": "Ben", "appearance": "x", "costume": "y", "voice": "z"})
+    plan["scenes"][1]["refs"] = ["env_night", "prop_cup", "char_a", "char_b"]
+    proj.save_plan(plan)
+    pl.generate_assets(client, s, proj)
+    on(proj, "veo-fast", "s02")
+    out = pl.generate_take(client, s, proj, "s02")
+    meta = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    assert meta["refs"] == ["char_a", "char_b", "env_night"]      # the prop is dropped, not a character
+
+
+@pytest.mark.parametrize("planned, shot", [(2, 4), (4, 4), (5, 6), (7, 8), (10, 8)])
+def test_veo_durations_snap_to_4_6_8(s, planned, shot):
+    from providers.veo import VeoFastVideo
+    assert VeoFastVideo(s).duration_for(planned) == shot
+
+
+def test_veo_retries_without_refs_if_rejected(proj, client, s, veo):
+    pl.generate_assets(client, s, proj)
+    on(proj, "veo-fast", "s01")
+    veo.reject_refs = True
+    out = pl.generate_take(client, s, proj, "s01")
+    assert veo.calls[1]["config"].reference_images is None
+    assert "reference" in json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))["refs_dropped"]
+
+
+def test_veo_safety_block_is_reported(proj, client, s, veo):
+    on(proj, "veo", "s01")
+    veo.rai = ["violence"]
+    with pytest.raises(providers.ProviderError) as ei:
+        pl.generate_take(client, s, proj, "s01")
+    assert pl.friendly_error(ei.value).startswith("Blocked by the model's safety filter")
+
+
+def test_veo_takes_cant_be_edited(proj, client, s, veo):
+    on(proj, "veo-fast", "s01")
+    take = pl.generate_take(client, s, proj, "s01")
+    with pytest.raises(providers.ProviderError, match="can't edit"):
+        pl.edit_take(client, s, proj, "s01", take, "x")
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_veo_continuous_scene_gets_the_first_frame(proj, client, s, veo):
+    pl.generate_take(client, s, proj, "s01")          # Omni
+    on(proj, "veo-fast", "s02")
+    pl.generate_take(client, s, proj, "s02")
+    assert veo.calls[0]["source"].image is not None
+    assert veo.calls[0]["source"].prompt.startswith("The video starts exactly on the given first frame.")

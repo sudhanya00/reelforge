@@ -115,7 +115,13 @@ function SceneCard({ p, sc, index }: { p: Project; sc: Scene; index: number }) {
           <Refs p={p} sc={sc} />
           {take && <ReviewPanel p={p} sc={sc} take={take} onReview={() => act.review(sc.id, take.name)} onUseFix={setFix} />}
           <PromptPanel p={p} sc={sc} />
-          {take && <FixComposer p={p} sc={sc} take={take} text={fix} setText={setFix} />}
+          {take && (providerInfo(act.settings, take.provider)?.caps.edit ?? true ? (
+            <FixComposer p={p} sc={sc} take={take} text={fix} setText={setFix} />
+          ) : (
+            <p className="mt-auto text-xs text-muted-foreground">
+              {providerInfo(act.settings, take.provider)?.label ?? "This model"} can&apos;t edit a take. Shoot another take instead.
+            </p>
+          ))}
         </div>
       </div>
     </motion.article>
@@ -369,8 +375,11 @@ function FixComposer({ p, sc, take, text, setText }: { p: Project; sc: Scene; ta
 // ---------------------------------------------------------------- model choice
 
 /** Short name for a provider: "Gemini", "Kling". */
+const SHORT: Record<string, string> = { "gemini-omni": "Gemini", "veo-fast": "Veo Fast", veo: "Veo", kling: "Kling" };
+
+/** Short name for a provider: "Gemini", "Veo Fast", "Kling". */
 function shortLabel(id: string) {
-  return id === "gemini-omni" ? "Gemini" : id.charAt(0).toUpperCase() + id.slice(1);
+  return SHORT[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
 }
 
 /** Which video model shoots this scene. The settings default unless the scene picks another. */

@@ -210,3 +210,31 @@ class FakeKling:
             clip = self.mp4 if isinstance(self.mp4, bytes) else self.mp4[self.tasks[tid]["aspect"]]
             return httpx.Response(200, content=clip)
         return httpx.Response(404, json={"code": 1202, "message": "no such method"})
+
+
+class FakeVeo:
+    """A stand-in for client.models.generate_videos + client.operations.get."""
+
+    def __init__(self, mp4: bytes | dict[str, bytes]):
+        self.mp4, self.calls = mp4, []
+        self.reject_refs = False          # first call with references fails with a 400
+        self.rai = None                   # list of reasons: the video is filtered
+        self.models = NS(generate_videos=self._generate)
+        self.operations = NS(get=self._get)
+        self._n = 0
+
+    def _generate(self, model, source, config):
+        self.calls.append({"model": model, "source": source, "config": config})
+        if self.reject_refs and config.reference_images:
+            self.reject_refs = False
+            from google.genai import errors
+            raise errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT",
+                                                     "message": "reference images are not supported with image input"}})
+        self._n += 1
+        return NS(name=f"operations/veo{self._n}", done=False, config=config)
+
+    def _get(self, op):
+        clip = self.mp4 if isinstance(self.mp4, bytes) else self.mp4[op.config.aspect_ratio]
+        resp = NS(generated_videos=[NS(video=NS(video_bytes=clip, uri=None))],
+                  rai_media_filtered_count=len(self.rai or []), rai_media_filtered_reasons=self.rai)
+        return NS(name=op.name, done=True, error=None, response=resp, result=None)

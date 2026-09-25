@@ -207,7 +207,7 @@ def kling_api(monkeypatch, mp4_bytes):
 def test_state_lists_providers_and_default(api):
     st = api.get("/api/state").json()["settings"]
     assert st["video_provider"] == "gemini-omni"
-    assert {p["id"] for p in st["providers"]} == {"gemini-omni", "kling"}
+    assert {p["id"] for p in st["providers"]} == {"gemini-omni", "veo-fast", "veo", "kling"}
     st = api.put("/api/settings", json={"video_provider": "kling", "kling_audio": False}).json()["settings"]
     assert st["video_provider"] == "kling" and st["kling_audio"] is False
     kling = next(p for p in st["providers"] if p["id"] == "kling")

@@ -116,6 +116,8 @@ def client_for(s: pl.Settings):
 DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 180,
                      "video_1080p": 240, "video_4k": 300, "stitch": 6,
                      "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360,
+                     "video_veo-fast_720p": 60, "video_veo-fast_1080p": 90,
+                     "video_veo_720p": 90, "video_veo_1080p": 120,
                      "review": 40, "direct": 60}
 
 
