@@ -1,0 +1,358 @@
+[
+ {
+  "version": "v1",
+  "scene": "s01",
+  "take": "take_02.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.2198,
+  "verdict": "reshoot",
+  "overall": 3.6,
+  "scores": {
+   "identity": 3,
+   "costume": 4,
+   "environment": 3,
+   "action": 4,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 1,
+   "artifacts": 2,
+   "style": 4,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-5.75s] fatal physics: The motorcycle wheels do not rotate; the vehicle glides across the snow.",
+   "[0.0-5.75s] major environment: The brief requires 'blinding horizontal snow', but there is no falling snow visible in the shot.",
+   "[0.0-2.5s] major artifacts: The headlight beam is detached from the lamp, floating like a separate cloud of light and pointing the wrong way.",
+   "[3.25-4.5s] major artifacts: A large black artifact, resembling a sudden thick beard or mask, morphs onto and off of the rider's lower face."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s01",
+  "take": "take_03.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.2178,
+  "verdict": "reshoot",
+  "overall": 3.4,
+  "scores": {
+   "identity": 4,
+   "costume": 5,
+   "environment": 2,
+   "action": 2,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 1,
+   "artifacts": 2,
+   "style": 3,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-6.02s] major environment: The landscape is flat and open, completely missing the steep rocky terrain of the 'Pass' reference.",
+   "[0.0-6.02s] fatal physics: Snow particles radiate outwards from a single point on the left instead of blowing horizontally.",
+   "[4.0-5.25s] minor artifacts: The rider's right hand merges indistinguishably into the motorcycle's handlebar."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s02",
+  "take": "take_01.mp4",
+  "planned_s": 8,
+  "clip_s": 8.0,
+  "cost": 0.2881,
+  "verdict": "keep",
+  "overall": 4.6,
+  "scores": {
+   "identity": 5,
+   "costume": 4,
+   "environment": 5,
+   "action": 5,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 4,
+   "artifacts": 3,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-8.0s] minor artifacts: The black gloves lack definition, appearing mushy and blending slightly into the glass.",
+   "[0.0-8.0s] minor costume: The reflective stripes on the orange jacket subtly shift and morph in width during the camera move.",
+   "[0.0-4.0s] minor artifacts: The liquid inside the chai glass lacks fluid properties and looks like a static solid mass."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s02",
+  "take": "take_02.mp4",
+  "planned_s": 8,
+  "clip_s": 8.0,
+  "cost": 0.2871,
+  "verdict": "reshoot",
+  "overall": 4.1,
+  "scores": {
+   "identity": 4,
+   "costume": 3,
+   "environment": 5,
+   "action": 3,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 4,
+   "artifacts": 2,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-8.0s] minor costume: The chai glass is smooth, missing the vertical facets shown in the prop reference.",
+   "[0.0-8.0s] minor action: The character is standing still and not shivering as briefed.",
+   "[6.25-8.0s] major artifacts: The character's eyes are warped, asymmetrical, and misaligned when he opens them."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s05",
+  "take": "take_01.mp4",
+  "planned_s": 7,
+  "clip_s": 7.02,
+  "cost": 0.2507,
+  "verdict": "reshoot",
+  "overall": 3.7,
+  "scores": {
+   "identity": 4,
+   "costume": 2,
+   "environment": 5,
+   "action": 5,
+   "camera": 4,
+   "pacing": 3,
+   "physics": 3,
+   "artifacts": 1,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 3.5,
+  "cuts": [],
+  "issues": [
+   "[0.0-7.02s] major costume: The Rider's jacket is missing all of the silver reflective safety bands shown in the reference.",
+   "[2.0-7.02s] fatal artifacts: A large, inexplicable grey geometric shape morphs out of the background and attaches itself to the front of the motorcycle, obscuring the windshield."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s05",
+  "take": "take_02.mp4",
+  "planned_s": 7,
+  "clip_s": 7.02,
+  "cost": 0.2536,
+  "verdict": "reshoot",
+  "overall": 3.7,
+  "scores": {
+   "identity": 4,
+   "costume": 4,
+   "environment": 4,
+   "action": 5,
+   "camera": 4,
+   "pacing": 5,
+   "physics": 2,
+   "artifacts": 2,
+   "style": 2,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[3.0-7.02s] major artifacts: The rider's left hand melts and merges completely into the clutch lever and mirror stalk.",
+   "[3.5-7.02s] major artifacts: The motorcycle's windshield and front dashboard geometry morph and change shape as the camera moves.",
+   "[5.0-7.02s] major style: A massive, milky lens flare washes out the entire image, destroying contrast and violating the negative prompt."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s01",
+  "take": "take_01.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.216,
+  "verdict": "reshoot",
+  "overall": 4.0,
+  "scores": {
+   "identity": 4,
+   "costume": 4,
+   "environment": 2,
+   "action": 5,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 3,
+   "artifacts": 2,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[4.5-5.75s] fatal artifacts: The background buildings vanish and are replaced by a blurry gray texture after the rider passes in front of them.",
+   "[3.5-4.5s] minor identity: The rider's face melts and loses distinct features as he approaches the center of the frame.",
+   "[1.5-2.5s] minor physics: The motorcycle's front wheel slides sideways across the snow unnaturally."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s01",
+  "take": "take_02.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.2176,
+  "verdict": "reshoot",
+  "overall": 4.2,
+  "scores": {
+   "identity": 4,
+   "costume": 5,
+   "environment": 5,
+   "action": 3,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 1,
+   "artifacts": 4,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.5-5.5s] fatal physics: The motorcycle wheels do not rotate; the vehicle simply glides across the snow.",
+   "[0.5-5.5s] major physics: The rider is completely rigid and lacks any subtle bodily motion or vibration from the struggling engine and rough terrain."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s02",
+  "take": "take_01.mp4",
+  "planned_s": 8,
+  "clip_s": 8.0,
+  "cost": 0.285,
+  "verdict": "fix",
+  "overall": 4.6,
+  "scores": {
+   "identity": 4,
+   "costume": 5,
+   "environment": 5,
+   "action": 4,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 5,
+   "artifacts": 3,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-8.0s] major artifacts: Literal film strip borders and sprocket holes are generated on the far left edge of the frame.",
+   "[0.0-8.0s] minor action: The Rider does not visibly shiver as requested in the brief."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s02",
+  "take": "take_02.mp4",
+  "planned_s": 8,
+  "clip_s": 8.0,
+  "cost": 0.289,
+  "verdict": "reshoot",
+  "overall": 4.0,
+  "scores": {
+   "identity": 3,
+   "costume": 4,
+   "environment": 5,
+   "action": 4,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 3,
+   "artifacts": 1,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[3.5-7.75s] fatal artifacts: Severe facial warping and melting; eyes distort, nose bends, and dirt textures crawl across the skin as he looks up."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s05",
+  "take": "take_01.mp4",
+  "planned_s": 7,
+  "clip_s": 7.02,
+  "cost": 0.2504,
+  "verdict": "fix",
+  "overall": 4.3,
+  "scores": {
+   "identity": 4,
+   "costume": 5,
+   "environment": 5,
+   "action": 5,
+   "camera": 5,
+   "pacing": 3,
+   "physics": 4,
+   "artifacts": 2,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 3.0,
+  "cuts": [],
+  "issues": [
+   "[0.5-3.0s] major artifacts: A vertical orange line artifact appears over the rider's torso and drifts to the left.",
+   "[4.0-7.02s] minor pacing: The rider finishes his action early and remains frozen staring forward for the rest of the clip.",
+   "[0.0-7.02s] minor artifacts: The motorcycle's engine block and front wheel spokes are melted and lack definition."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s05",
+  "take": "take_02.mp4",
+  "planned_s": 7,
+  "clip_s": 7.02,
+  "cost": 0.2484,
+  "verdict": "fix",
+  "overall": 4.2,
+  "scores": {
+   "identity": 4,
+   "costume": 3,
+   "environment": 5,
+   "action": 5,
+   "camera": 4,
+   "pacing": 4,
+   "physics": 4,
+   "artifacts": 3,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-7.02s] major costume: The rider is missing the thick black motorcycle gloves specified in the character reference.",
+   "[0.0-7.02s] minor artifacts: The front wheel spokes and brake rotor are garbled and gently morph throughout the shot.",
+   "[3.0-4.5s] minor artifacts: The rider's right hand morphs and loses structural integrity as it is brought up to grip the handlebar."
+  ]
+ }
+]

@@ -66,3 +66,44 @@ Draft + director: 128 s, $0.22 (8.8k input, 8.5k output, 8.4k thinking tokens), 
   described as a physical curled print).
 - To watch: 3 scenes use deliberate holds; the A/B round should show whether they read as
   intentional or as stalling.
+
+## A/B round 1: v1 vs v2 prompts (2026-09-25)
+
+Setup: the original v1 plan of The Pass vs a copy converted to v2 by the director (same ids,
+same reference images), Gemini Omni at 360p, scenes s01 (bike in the storm), s02 (chai: hands
+and objects), s05 (departure on the bike), 2 takes each, all reviewed. Spend $4.43 (refs $0.67,
+video $3.03, director $0.11, reviews $0.62). Takes rendered in 25-66 s.
+
+| | v1 | v2 |
+|---|---|---|
+| Mean overall (1-5) | 3.85 | **4.22** |
+| Keep / fix / reshoot | 1 / 0 / 5 | 0 / **3** / 3 |
+| Physics | 2.50 | **3.33** |
+| Artifacts | 2.00 | **2.50** |
+| Costume | 3.67 | **4.33** |
+| Environment | 4.00 | **4.50** |
+| Style | 4.00 | **5.00** |
+| Pacing | **4.67** | 4.50 |
+| Identity | **4.00** | 3.83 |
+| Dead time (meter) | 0 s | 0 s |
+
+Reading it (n = 6 per arm, so treat as direction, not proof):
+- v2 is better overall, mainly physics, costume, environment and style; usable-or-fixable takes
+  went from 1/6 to 3/6.
+- No frozen starts in either arm this time (all were motion scenes); the stall pattern from
+  Green Means Go was in static close-ups, which this round didn't test.
+- v2 s05 finished its only action early and froze: the conversion kept v1's thin content
+  (one head turn over 7 s). Beats must fill the clip, or the clip must be shorter.
+- Failures common to both arms, i.e. model limits rather than prompts: motorcycle wheels not
+  turning (the bike glides), faces melting in close-ups, hands merging into handlebars,
+  reference details dropped (gloves, reflective bands).
+- New style artefact: "35mm film grain" produced literal film-strip borders with sprocket holes
+  (v2 s02). Like "anamorphic" -> lens flare: style vocabulary needs vetting.
+
+Next changes to test:
+1. Director: vehicles get explicit motion cues (wheels turning, spray from the rear tyre,
+   suspension working); thin scenes get richer beats or a shorter duration.
+2. Style vocabulary rules: describe the texture ("fine film grain") and never the film stock,
+   format or lens hardware ("35mm", "anamorphic") in prompts.
+3. Next round with a fresh v2 plan (not a conversion), including static close-ups, and the
+   same scenes on Kling once a key is set up.
