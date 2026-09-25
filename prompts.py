@@ -13,8 +13,9 @@ import re
 # Each is rewritten as the look it stands for. Keep this list short and evidence-based.
 _HARDWARE_WORDS = [
     (re.compile(r"\b\d{1,2}\s?mm (film|stock)\b", re.I), r"\1"),     # "35mm film grain" -> "film grain"
+    # flares before "anamorphic", or "anamorphic lens flares" loses "lens" and keeps "flares"
+    (re.compile(r"\b(anamorphic )?lens flares?\b", re.I), "soft glow around bright lights"),
     (re.compile(r"\banamorphic( lens(es)?)?\b", re.I), "widescreen"),
-    (re.compile(r"\blens flares?\b", re.I), "soft glow around bright lights"),
     # unambiguous brand names only (not "RED": that's also a colour)
     (re.compile(r"\b(shot on )?(kodak( vision ?\d\w*)?|fujifilm|arri( alexa)?|panavision|cooke)\b( look)?,?\s*", re.I), ""),
 ]

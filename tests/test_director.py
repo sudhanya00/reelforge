@@ -84,7 +84,9 @@ def test_style_line_applies_the_rewrite():
     p = copy.deepcopy(PLAN_V2)
     p["style"]["look"] = "35mm film grain, anamorphic lens flares"
     line = pl.style_line(p)
-    assert "35mm" not in line and "anamorphic" not in line and "film grain" in line
+    # "Lens: 35mm" is a focal length (framing) and stays; "35mm film" is the trigger
+    assert "35mm film" not in line and "anamorphic" not in line and "flares" not in line
+    assert "film grain" in line and "soft glow around bright lights" in line
 
 
 def test_director_knows_round_one_lessons():
