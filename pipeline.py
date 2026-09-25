@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+import google.auth
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -62,8 +63,13 @@ def make_client(s: Settings, api_key: str | None = None) -> genai.Client:
             return genai.Client(vertexai=True, api_key=key)
         if not s.gcp_project:
             raise ValueError("Vertex backend needs GOOGLE_CLOUD_PROJECT (or a VERTEX_API_KEY).")
-        # Application Default Credentials: `gcloud auth application-default login`
-        return genai.Client(vertexai=True, project=s.gcp_project, location=s.gcp_location)
+        # Application Default Credentials (`gcloud auth application-default login`).
+        # Pin the quota project to the billed project; otherwise google.auth falls back
+        # to whatever project the gcloud CLI config happens to point at.
+        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                                       quota_project_id=s.gcp_project)
+        return genai.Client(vertexai=True, project=s.gcp_project, location=s.gcp_location,
+                            credentials=creds)
     return genai.Client(vertexai=False, api_key=api_key or os.environ.get("GEMINI_API_KEY"))
 
 
