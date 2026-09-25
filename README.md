@@ -1,41 +1,62 @@
 # ReelForge
 
-Idea in, film out. Gemini 3.1 Pro writes the production bible, Nano Banana Pro paints
+Idea in, film out. Gemini 3.1 Pro writes the production plan, Nano Banana Pro paints
 character / prop / location references, Gemini Omni Flash shoots each scene with those
 references attached, ffmpeg stitches the selected takes.
 
-## Setup
-    pip install -r requirements.txt
-    echo GEMINI_API_KEY=... > .env   # or export it, or paste it in the sidebar
-    # optional but recommended: ffmpeg on PATH (for continuity frames + stitching)
+## Start it
+Double-click **`ReelForge.bat`**. It sets things up on first run, starts the app and opens
+your browser at http://localhost:8765. Close the console window to stop it.
 
-### Billing via Vertex AI (GCP credits)
-AI Studio keys bill AI Studio (prepaid or postpaid); GCP credits apply only through Vertex AI.
-Put this in `.env` instead, then run `gcloud auth application-default login`:
+    python launch.py --shortcut     # put a ReelForge icon on the desktop
+    python launch.py --demo         # try the UI with a fake model; nothing is billed
+
+Needs Python 3.11+, Node.js (only to build the UI after updates) and ffmpeg
+(`winget install Gyan.FFmpeg`) for continuous scenes, posters and stitching.
+
+## Credentials (`.env` next to this file)
+GCP credits apply only through Vertex AI:
 
     GOOGLE_GENAI_USE_VERTEXAI=true
     GOOGLE_CLOUD_PROJECT=<your-project-id>
     GOOGLE_CLOUD_LOCATION=global     # preview models are usually served from global
 
-Or set `VERTEX_API_KEY` (Vertex express mode) instead of using gcloud credentials.
-On Vertex, 1080p/4k (`delivery: uri`) needs a GCS bucket; 360p/720p return inline.
+then run `gcloud auth application-default login` once. Or use an AI Studio key:
+`GEMINI_API_KEY=...`. Backend, project, models and defaults can also be changed in the
+app's Settings (saved to `reelforge.settings.json`). On Vertex, 1080p/4k needs a Cloud
+Storage bucket, which isn't wired up yet; 360p/720p work.
 
-## Run
-    streamlit run app.py             # step by step, with checkpoints
-    python cli.py --story "..." --style "..."            # 9:16, 720p by default
-    python cli.py --story "..." --resolution 360p         # cheap test run
-    python cli.py --resume projects/<folder>              # finish an interrupted/failed run
+## Workflow
+1. **Plan**: describe the story; review and edit the plan before anything costly runs.
+2. **References**: paint the cast, props and locations; repaint or edit prompts until right.
+3. **Scenes**: shoot takes, pick the best, or describe a fix ("heavier snow") to edit a take
+   instead of re-rolling it.
+4. **Final cut**: stitch the selected takes.
 
-Full-auto runs (CLI, or "Make the whole film" / "Make everything missing" in the UI) skip
-work that already exists, so re-running resumes where the last run stopped. Rate limits and
-server overloads are retried with backoff; billing, credential and permission errors stop
-the run at once instead of failing every remaining call. A scene whose reference images
-failed is skipped rather than shot without them.
+"Make it all" / "Make everything missing" run the rest with no checkpoints. They skip
+what already exists, so re-running resumes an interrupted or failed run. Rate limits are
+retried; billing/credential/permission errors stop the run at once; a scene whose
+references failed is skipped rather than shot without them.
 
 ## Costs
 Every generation call logs its token usage and an estimated `cost_usd` to `log.jsonl`
-(prices live in `Settings.PRICES`). The UI shows spend per project and an estimate on
-every button that spends money; the CLI prints the total at the end.
+(prices live in `Settings.PRICES`). The app shows spend per film, an estimate on every
+button that spends money, and asks before anything over $1.
+
+## Headless
+    python cli.py --story "..." --style "..."        # 9:16, 720p by default
+    python cli.py --story "..." --resolution 360p     # cheap test run
+    python cli.py --resume projects/<folder>          # finish an interrupted/failed run
+
+## Code
+    pipeline.py   all generation logic (no UI)
+    server.py     local API + background jobs over pipeline.py; serves the UI
+    web/          Next.js UI (exported to web/out, served by server.py)
+    launch.py     builds the UI when needed, starts the server, opens the browser
+    cli.py        headless runs
+
+UI development: run `python launch.py --no-browser`, then in `web/`:
+`set NEXT_PUBLIC_API=http://localhost:8765 && npm run dev` (hot reload on :3000).
 
 ## Tests
     pip install -r requirements-dev.txt
@@ -43,17 +64,9 @@ every button that spends money; the CLI prints the total at the end.
 
 ## Project folder
     projects/<date>-<title>/
-      plan.json           production bible (editable; also stores prompt overrides + chosen takes)
+      plan.json           production plan (also stores prompt overrides + chosen takes)
       assets/*.png        reference sheets and environment plates
-      scenes/s01/take_01.mp4 + take_01.json   clip + exact prompt, refs, interaction id
-      log.jsonl           every generation call, in order
+      scenes/s01/take_01.mp4 + take_01.json   clip + exact prompt, refs, usage, cost
+      frames/             continuity frames and poster stills
+      log.jsonl           every generation call, in order, with cost
       final.mp4
-
-## Workflow
-1. Plan: review and edit plan.json before spending on generation.
-2. References: regenerate any sheet until it's right; later scenes reuse it.
-3. Scenes: shoot takes, pick the best, or type a fix ("heavier snow") to edit
-   the take conversationally instead of re-rolling from scratch.
-4. Final cut: stitch the selected takes.
-
-Model ids live in the sidebar / Settings; swap them when Google renames previews.
