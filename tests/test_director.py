@@ -70,3 +70,24 @@ def test_planner_v1_is_still_selectable(tmp_path, client, s):
     proj = pl.new_project(client, s, "x", "y", 3, base_dir=tmp_path)
     plan = proj.load_plan()
     assert "beats" not in plan["scenes"][0] and "director_notes" not in plan
+
+
+def test_hardware_words_become_looks():
+    from prompts import look_words
+    assert look_words("Photoreal 35mm film, heavy film grain") == "Photoreal film, heavy film grain"
+    assert look_words("Vintage anamorphic lenses") == "Vintage widescreen"
+    assert look_words("Shot on Kodak Vision3, ARRI Alexa look, soft") == "soft"
+    assert look_words("Red jacket, red door") == "Red jacket, red door"      # colours survive
+
+
+def test_style_line_applies_the_rewrite():
+    p = copy.deepcopy(PLAN_V2)
+    p["style"]["look"] = "35mm film grain, anamorphic lens flares"
+    line = pl.style_line(p)
+    assert "35mm" not in line and "anamorphic" not in line and "film grain" in line
+
+
+def test_director_knows_round_one_lessons():
+    for text in (director.PLANNER_V2_SYSTEM, director.DIRECTOR_SYSTEM):
+        assert "wheels" in text and "35mm" in text
+    assert "shorter duration" in director.DIRECTOR_SYSTEM

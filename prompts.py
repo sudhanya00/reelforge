@@ -6,6 +6,26 @@ Providers add their own reference-image syntax around scene_lines().
 """
 from __future__ import annotations
 
+import re
+
+# Words that describe camera hardware rather than the image, and that video models render
+# literally (A/B round 1: "35mm film grain" -> film-strip borders; "anamorphic" -> stuck flare).
+# Each is rewritten as the look it stands for. Keep this list short and evidence-based.
+_HARDWARE_WORDS = [
+    (re.compile(r"\b\d{1,2}\s?mm (film|stock)\b", re.I), r"\1"),     # "35mm film grain" -> "film grain"
+    (re.compile(r"\banamorphic( lens(es)?)?\b", re.I), "widescreen"),
+    (re.compile(r"\blens flares?\b", re.I), "soft glow around bright lights"),
+    # unambiguous brand names only (not "RED": that's also a colour)
+    (re.compile(r"\b(shot on )?(kodak( vision ?\d\w*)?|fujifilm|arri( alexa)?|panavision|cooke)\b( look)?,?\s*", re.I), ""),
+]
+
+
+def look_words(text: str) -> str:
+    """Rewrite camera-hardware wording as the look it stands for."""
+    for pat, repl in _HARDWARE_WORDS:
+        text = pat.sub(repl, text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
 
 def dot(text: str) -> str:
     """Planner fields may or may not end with a period; end with exactly one."""
@@ -15,8 +35,8 @@ def dot(text: str) -> str:
 def style_line(plan: dict) -> str:
     st = plan["style"]
     medium = f"Medium: {dot(st['medium'])} " if st.get("medium") else ""
-    return (f"{medium}Style: {dot(st['look'])} Colour grade: {dot(st['color_grade'])} "
-            f"Lens: {dot(st['lens'])} Avoid: {dot(st['avoid'])}")
+    return look_words(f"{medium}Style: {dot(st['look'])} Colour grade: {dot(st['color_grade'])} "
+                      f"Lens: {dot(st['lens'])} Avoid: {dot(st['avoid'])}")
 
 
 def dialogue_line(plan: dict, scene: dict) -> str:
@@ -84,7 +104,7 @@ def _beat_lines(plan: dict, scene: dict, duration_s: int | None) -> list[str]:
         style_line(plan),
     ]
     if motion:
-        lines.append(f"Motion: {dot(motion)}")
+        lines.append(look_words(f"Motion: {dot(motion)}"))
     lines.append("The action is already underway in the first frame; follow the timeline closely and "
                  "end on the last beat.")
     if len(shots) > 1:

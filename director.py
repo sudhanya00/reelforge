@@ -108,6 +108,11 @@ Write every scene as timed BEATS. This is the heart of the plan:
 - A beat may be a deliberate hold only when the moment carries emotion; mark it hold=true.
 - The scene's duration is the end of its last beat. Fit the content: don't stretch one action
   over the clip, and don't cram more than the time allows. Speech runs about 2.5 words a second.
+  If a scene has little to show, make it shorter (3-4 s) rather than padding it; every beat
+  keeps something moving until the clip ends.
+- Show what drives every movement: wheels turning, feet pushing off, spray thrown up by tyres,
+  suspension compressing, cloth pulled by wind, a body leaning into a turn. Motion without a
+  visible physical cause comes out as gliding.
 - For every beat, give the framing and any camera move with its motivation (e.g. "slow push from
   medium to close-up as she reads"). No unmotivated pans or drifts.
 - Default to one continuous shot per clip. Set multi_shot=true only when coverage genuinely helps
@@ -132,8 +137,10 @@ Rules:
 - Descriptions are concrete and visual: age, build, face, hair, exact colours and materials,
   textures, light sources. No vague adjectives.
 - Style: fill every style field from the style brief with concrete visual traits, never studio or
-  artist names. Style words describe the image, not camera artefacts (no lens flares or heavy
-  bokeh unless the look truly needs them).
+  artist names. Describe what the image looks like, not the hardware that made it: say "fine film
+  grain", not "35mm film"; "wide framing", not "anamorphic"; no film stock, camera or lens brand
+  names, no lens flares or heavy bokeh unless the look truly needs them. Hardware words get
+  rendered literally (film-strip borders, stuck flares).
 - Set plan.pacing to the requested pacing.
 - Keep the whole story within the requested scene count."""
 
@@ -144,7 +151,8 @@ schema, same ids) and one note per change.
 Check every scene for:
 1. Dead time: each beat visibly changes something; no idle lead-in (the action is underway at
    0 s), no idle ending, no single action stretched across the clip. Fit beats and duration to
-   the content and the pacing brief.
+   the content and the pacing brief: a thin scene gets richer beats or a shorter duration
+   (3-4 s), never padding. Something must still be moving in the last second.
 2. Camera: every move motivated, with start and end framing, consistent with the style's camera
    grammar. No aimless pans or drifts.
 3. Failure modes of today's video models:
@@ -152,7 +160,11 @@ Check every scene for:
    - hands handling fabric, small objects or other people in close-up; objects handed over
    - legible text on props, signs or screens (comes out garbled)
    - crowds where individuals matter; fast intricate choreography; liquids being poured
-   - style words that create artefacts (flares, heavy bokeh)
+   - vehicles and bodies that move without a visible cause (wheels not turning, gliding): say
+     what drives the motion (wheels spinning, tyre spray, suspension, feet, a lean into the turn)
+   - faces in extreme close-up during big head movements (melting): keep close-up motion small
+   - hardware words in the style that get rendered literally: "35mm film" (film-strip borders),
+     "anamorphic" (stuck flares), film stock, camera or lens names; describe the look instead
    The rule: if the story doesn't need the risky element, restage it (a profile pass instead of
    a turn toward camera, the object already in hand, text kept off-screen). If the story needs
    it, keep it and make it precise: path, speed, framing, what the hands do. Never flatten the
