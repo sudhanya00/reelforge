@@ -208,7 +208,7 @@ function JobsButton() {
 }
 
 const tabFor = (j: Job) =>
-  ({ assets: "references", take: "scenes", edit: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan" })[j.kind];
+  ({ assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan" })[j.kind];
 
 function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
   const [open, setOpen] = React.useState(false);

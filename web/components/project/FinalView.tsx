@@ -112,7 +112,7 @@ function Timeline({ p }: { p: Project }) {
 }
 
 const KINDS = [
-  { key: ["plan"], label: "Planning", color: "var(--chart-1)" },
+  { key: ["plan", "review"], label: "Planning & reviews", color: "var(--chart-1)" },
   { key: ["image"], label: "References", color: "var(--chart-2)" },
   { key: ["video", "video_unsaved"], label: "Scenes", color: "var(--chart-3)" },
   { key: ["video_edit"], label: "Fixes", color: "var(--chart-4)" },

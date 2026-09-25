@@ -242,3 +242,15 @@ def test_plan_save_keeps_scene_providers(api, pid):
     plan.pop("video_providers")
     v = api.put(f"/api/projects/{pid}/plan", json={"plan": plan}).json()
     assert v["plan"]["video_providers"] == {"s02": "kling"}
+
+
+def test_review_a_take(api, pid):
+    wait(api, api.post(f"/api/projects/{pid}/scenes/s01/takes").json())
+    j = wait(api, api.post(f"/api/projects/{pid}/scenes/s01/takes/take_01.mp4/review").json())
+    assert j["status"] == "done" and j["result"] == {"verdict": "fix", "overall": 4.0}, j
+    take = api.get(f"/api/projects/{pid}").json()["scenes"][0]["takes"][0]
+    assert take["review"]["fix_instruction"] == "Start the walk immediately."
+    assert take["review"]["cost_usd"] > 0
+    v = api.get(f"/api/projects/{pid}").json()
+    assert v["costs"]["by_kind"]["review"]["calls"] == 1
+    assert api.post(f"/api/projects/{pid}/scenes/s01/takes/nope.mp4/review").status_code == 404

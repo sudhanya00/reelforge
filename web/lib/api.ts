@@ -81,6 +81,19 @@ export interface Asset {
   error: string | null;
 }
 
+export interface Review {
+  summary: string;
+  verdict: "keep" | "fix" | "reshoot";
+  overall: number;
+  scores: Record<string, { score: number; note: string }>;
+  issues: { t_start: number; t_end: number; category: string; severity: "minor" | "major" | "fatal"; description: string }[];
+  beats_observed: { t_start: number; t_end: number; what: string }[];
+  dead_time_s: number;
+  fix_instruction: string;
+  prompt_advice: string;
+  cost_usd: number | null;
+}
+
 export interface Take {
   name: string;
   url: string;
@@ -94,6 +107,8 @@ export interface Take {
   created: number;
   provider: string;
   model: string | null;
+  review: Review | null;
+  motion: { dead: [number, number][]; dead_s: number; cuts: number[] } | null;
 }
 
 export interface PlanScene {
@@ -165,7 +180,7 @@ export interface Project {
 
 export interface Job {
   id: string;
-  kind: "plan" | "film" | "assets" | "take" | "edit" | "produce" | "stitch";
+  kind: "plan" | "film" | "assets" | "take" | "edit" | "produce" | "stitch" | "review";
   label: string;
   project: string | null;
   claims: string[];
@@ -227,6 +242,8 @@ export const api = {
   fix: (id: string, scene: string, take: string, instruction: string) =>
     call<Job>("POST", `/api/projects/${id}/scenes/${scene}/takes/${take}/edit`, { instruction }),
   produce: (id: string) => call<Job>("POST", `/api/projects/${id}/produce`),
+  review: (id: string, scene: string, take: string) =>
+    call<Job>("POST", `/api/projects/${id}/scenes/${scene}/takes/${take}/review`),
   stitch: (id: string) => call<Job>("POST", `/api/projects/${id}/stitch`),
   reveal: (id: string) => call<{ ok: boolean }>("POST", `/api/projects/${id}/reveal`),
   deleteProject: (id: string) => call<{ ok: boolean; moved_to: string }>("DELETE", `/api/projects/${id}`),

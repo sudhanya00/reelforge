@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import pipeline as pl
+import review as rv
 import providers
 
 ROOT = Path(__file__).resolve().parent
@@ -112,7 +113,8 @@ def client_for(s: pl.Settings):
 # How long each kind of step usually takes (seconds), until we've measured our own.
 DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 180,
                      "video_1080p": 240, "video_4k": 300, "stitch": 6,
-                     "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360}
+                     "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360,
+                     "review": 40}
 
 
 def video_key(provider: str, resolution: str) -> str:
@@ -254,7 +256,9 @@ def take_view(proj: pl.Project, take: Path) -> dict:
             "resolution": meta.get("format", {}).get("resolution"),
             "edited_from": meta.get("edited_from"), "edit": meta.get("edit"),
             "prompt": meta.get("prompt"), "created": take.stat().st_mtime,
-            "provider": meta.get("provider", providers.DEFAULT_VIDEO), "model": meta.get("model")}
+            "provider": meta.get("provider", providers.DEFAULT_VIDEO), "model": meta.get("model"),
+            "review": meta.get("review"),
+            "motion": {k: meta["motion"][k] for k in ("dead", "dead_s", "cuts")} if meta.get("motion") else None}
 
 
 def item_errors(proj: pl.Project) -> dict[str, str]:
@@ -684,6 +688,23 @@ def edit_take(pid: str, sid: str, take: str, body: EditIn):
         return {"take": out.name}
 
     return submit("edit", f"Fixing {sid}", pid, {sid}, run).view()
+
+
+@app.post("/api/projects/{pid}/scenes/{sid}/takes/{take}/review")
+def review_take(pid: str, sid: str, take: str):
+    """Gemini watches the take beside its brief and references: scorecard, issues, suggested fix."""
+    proj = open_project(pid)
+    src = proj.scene_dir(sid) / take
+    if not src.exists():
+        raise HTTPException(404, "No such take")
+    s = current_settings()
+
+    def run(job: Job):
+        job.step("review", f"Reviewing {sid}")
+        r = rv.review_take(client_for(s), s, proj, sid, src)
+        return {"verdict": r["verdict"], "overall": r["overall"]}
+
+    return submit("review", f"Reviewing {sid}", pid, {f"review:{sid}"}, run).view()
 
 
 @app.post("/api/projects/{pid}/produce")

@@ -10,6 +10,7 @@ import { JobProgress } from "@/components/progress";
 import { url, type Asset, type Project, type Scene, type Take } from "@/lib/api";
 import { cn, secs, usd } from "@/lib/utils";
 import { useProjectActions } from "./actions";
+import { ReviewPanel } from "./ReviewPanel";
 
 export function ScenesView({ p }: { p: Project }) {
   return (
@@ -47,6 +48,8 @@ function SceneCard({ p, sc, index }: { p: Project; sc: Scene; index: number }) {
   const vertical = p.orientation === "9:16";
   const take = sc.takes.find((t) => t.name === sc.selected) ?? sc.takes.at(-1);
   const prev = index > 0 ? p.scenes[index - 1] : null;
+  const act = useProjectActions(p);
+  const [fix, setFix] = React.useState("");
 
   return (
     <motion.article
@@ -107,8 +110,9 @@ function SceneCard({ p, sc, index }: { p: Project; sc: Scene; index: number }) {
           )}
 
           <Refs p={p} sc={sc} />
+          {take && <ReviewPanel p={p} sc={sc} take={take} onReview={() => act.review(sc.id, take.name)} onUseFix={setFix} />}
           <PromptPanel p={p} sc={sc} />
-          {take && <FixComposer p={p} sc={sc} take={take} />}
+          {take && <FixComposer p={p} sc={sc} take={take} text={fix} setText={setFix} />}
         </div>
       </div>
     </motion.article>
@@ -131,6 +135,7 @@ function Stage({ p, sc, take, vertical }: { p: Project; sc: Scene; take?: Take; 
     <div className={cn("relative overflow-hidden rounded-xl bg-black", vertical ? "aspect-[9/16]" : "aspect-video")}>
       {take && (
         <video
+          id={`video-${sc.id}`}
           key={take.url}
           src={url(take.url)}
           poster={url(take.poster)}
@@ -321,9 +326,8 @@ function PromptPanel({ p, sc }: { p: Project; sc: Scene }) {
   );
 }
 
-function FixComposer({ p, sc, take }: { p: Project; sc: Scene; take: Take }) {
+function FixComposer({ p, sc, take, text, setText }: { p: Project; sc: Scene; take: Take; text: string; setText: (t: string) => void }) {
   const act = useProjectActions(p);
-  const [text, setText] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const busy = sc.status === "generating";
   // an edit goes to the model that made the take, at that take's resolution

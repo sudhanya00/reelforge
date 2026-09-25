@@ -38,6 +38,18 @@ PLAN = {
 }
 
 
+FAKE_REVIEW = {
+    "summary": "A usable shot with a slow start.",
+    "beats_observed": [{"t_start": 0, "t_end": 2, "what": "Asha walks in"}],
+    "scores": {c: {"score": 4, "note": "ok"} for c in ("identity", "costume", "environment", "action", "camera",
+                                                       "pacing", "physics", "artifacts", "style", "continuity")},
+    "issues": [{"t_start": 0, "t_end": 1.5, "category": "pacing", "severity": "minor",
+                "description": "Nothing happens for the first 1.5 seconds."}],
+    "dead_time_s": 1.5, "verdict": "fix", "fix_instruction": "Start the walk immediately.",
+    "prompt_advice": "Say the action is already underway in the first frame.",
+}
+
+
 def _png(fmt="PNG", aspect="16:9", seed="") -> bytes:
     """A flat placeholder in the requested aspect, coloured by `seed` so cards differ."""
     w, h = (64, 36) if aspect == "16:9" else (36, 64)
@@ -91,6 +103,8 @@ class FakeClient:
             part = NS(inline_data=NS(data=data, mime_type=self.image_mime))
             return NS(candidates=[NS(content=NS(parts=[part]), finish_reason="STOP")],
                       usage_metadata=usage, text=None)
+        if "film editor" in (config.system_instruction or ""):   # the take reviewer
+            return NS(text=json.dumps(FAKE_REVIEW), usage_metadata=usage)
         return NS(text=json.dumps(PLAN), usage_metadata=usage)
 
     def _create(self, **kw):
