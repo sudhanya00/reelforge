@@ -65,6 +65,7 @@ export function useProjectActions(p: Project | undefined) {
         return run("Couldn't start", () => api.produce(id));
       },
       stitch: () => run("Couldn't stitch", () => api.stitch(id)),
+      direct: () => run("Couldn't start the director", () => api.direct(id)),
       review: (sceneId: string, take: string) => run(`Couldn't review ${sceneId}`, () => api.review(id, sceneId, take)),
       select: (sceneId: string, take: string) => run("Couldn't select take", () => api.select(id, sceneId, take)),
       setPrompt: (item: string, prompt: string | null, provider?: string) =>

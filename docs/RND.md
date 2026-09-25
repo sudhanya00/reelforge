@@ -39,7 +39,7 @@ Patterns, and the hypothesis each suggests:
 ## Plan
 
 1. **Instruments.** Done: motion meter, reviewer, review panel in the app.
-2. **Planner v2**
+2. **Planner v2** (built; first live plan below)
    - Scenes as timed beats (t_start, t_end, what changes, camera), a visible change every
      ~1.5-3 s, holds only when deliberate and labelled. Clip length = sum of beats.
    - Camera moves with motivation, speed, start and end framing.
@@ -54,3 +54,15 @@ Patterns, and the hypothesis each suggests:
 4. **Prompt compiler v2** per provider: beats → Omni timing language / Kling multi-shot syntax.
 5. **A/B rounds**: same scenes, v1 vs v2, 2 takes each at 360p (~$1-2 per round); compare
    reviewer scores, dead time, and your picks.
+
+## Planner v2, first live plan (The Pass, 2026-09-25)
+
+Draft + director: 128 s, $0.22 (8.8k input, 8.5k output, 8.4k thinking tokens), about 4x v1.
+- Every scene is timed beats with the action underway at 0 s; s05 (the photo reveal) became a
+  2-shot clip: a push-in on the photo, then a cut to Tsering's smile.
+- Restaged where the story didn't need the risk: bike ploughs straight instead of fishtailing,
+  chai already on the counter instead of handed over, departure rides straight away from camera.
+- Kept risks the story needs and recorded the handling (the photo gets a locked-off shot and is
+  described as a physical curled print).
+- To watch: 3 scenes use deliberate holds; the A/B round should show whether they read as
+  intentional or as stalling.

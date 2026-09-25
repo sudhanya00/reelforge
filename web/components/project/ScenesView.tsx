@@ -11,6 +11,7 @@ import { url, type Asset, type Project, type Scene, type Take } from "@/lib/api"
 import { cn, secs, usd } from "@/lib/utils";
 import { useProjectActions } from "./actions";
 import { ReviewPanel } from "./ReviewPanel";
+import { BeatStrip, Risks } from "./Beats";
 
 export function ScenesView({ p }: { p: Project }) {
   return (
@@ -89,6 +90,8 @@ function SceneCard({ p, sc, index }: { p: Project; sc: Scene; index: number }) {
           </div>
 
           <p className="text-lg leading-snug font-medium tracking-tight">{sc.action}</p>
+          {sc.beats && sc.beats.length > 0 && <BeatStrip sc={sc} />}
+          {sc.risks && sc.risks.length > 0 && <Risks risks={sc.risks} />}
 
           <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
             {([["Shot", sc.shot], ["Camera", sc.camera], ["Lighting", sc.lighting], ["Sound", sc.audio]] as const).map(([k, v]) => (

@@ -12,7 +12,7 @@ import { useRoute } from "@/components/shell";
 import { imageUsd, useAppState, useJobs, useProjects, videoUsd } from "@/lib/hooks";
 import { JobProgress } from "@/components/progress";
 import { useDeleteFilm } from "@/components/project/actions";
-import { api, url, type Job, type Orientation, type ProjectSummary, type Resolution } from "@/lib/api";
+import { api, url, type Job, type Orientation, type Pacing, type ProjectSummary, type Resolution } from "@/lib/api";
 import { ago, cn, usd } from "@/lib/utils";
 
 export function Library() {
@@ -69,12 +69,15 @@ function Composer() {
   const [style, setStyle] = React.useState("");
   const [scenes, setScenes] = React.useState(6);
   const [orientation, setOrientation] = React.useState<Orientation | null>(null);
+  const [preset, setPreset] = React.useState<string | null>(null);
+  const [pacing, setPacing] = React.useState<Pacing | null>(null);   // null = the preset's default
   const [submitting, setSubmitting] = React.useState(false);
   const [waitingFor, setWaitingFor] = React.useState<string | null>(null);
   const { jobs } = useJobs();
   const ref = React.useRef<HTMLTextAreaElement>(null);
 
   const orient = orientation ?? s?.orientation ?? "9:16";
+  const pace: Pacing = pacing ?? state?.styles.find((x) => x.id === preset)?.pacing ?? "balanced";
   // rough: ~7s per scene, about half as many references as scenes plus a few locations
   const filmUsd = videoUsd(s, scenes * 7) + imageUsd(s, Math.ceil(scenes / 2) + 3) + 0.05;
 
@@ -91,7 +94,7 @@ function Composer() {
     if (auto && !(await confirm({ title: "Make the whole film?", usd: filmUsd, detail: `Roughly — the plan decides the exact number of scenes and references. Everything runs at ${s?.resolution}.`, action: "Make it" }))) return;
     setSubmitting(true);
     try {
-      const job = await api.newFilm({ story, style, scenes, orientation: orient, auto });
+      const job = await api.newFilm({ story, style, scenes, orientation: orient, auto, preset, pacing: pace });
       setWaitingFor(job.id);
       globalMutate("/api/jobs");
       setStory("");
@@ -136,13 +139,29 @@ function Composer() {
           autoFocus
           className="block max-h-[40vh] min-h-28 w-full resize-none bg-transparent px-5 pt-5 pb-2 text-[15px] leading-relaxed outline-none field-sizing-content placeholder:text-muted-foreground/60"
         />
+        {state && (
+          <div className="flex flex-wrap items-center gap-1.5 px-5 pb-2">
+            {state.styles.map((st) => (
+              <button
+                key={st.id}
+                onClick={() => setPreset(preset === st.id ? null : st.id)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                  preset === st.id ? "border-foreground/30 bg-foreground text-background" : "text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+                )}
+              >
+                {st.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-2 px-5 pb-3">
           <Palette className="size-4 shrink-0 text-muted-foreground" />
           <input
             value={style}
             onChange={(e) => setStyle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && submit(false)}
-            placeholder="Style — e.g. photoreal, 35mm grain, cool blue exteriors, warm amber interiors"
+            placeholder={preset ? "Refine the style (optional) — e.g. warm amber interiors, heavy snow" : "Style — or pick a preset above"}
             className="h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
           />
         </div>
@@ -165,6 +184,18 @@ function Composer() {
               <Plus className="size-3.5" />
             </button>
           </div>
+          {state && (
+            <Tip content={state.pacing.find((x) => x.id === pace)?.brief}>
+              <span>
+                <Segmented<Pacing>
+                  size="sm"
+                  value={pace}
+                  onChange={setPacing}
+                  options={state.pacing.map((x) => ({ value: x.id, label: x.label }))}
+                />
+              </span>
+            </Tip>
+          )}
           {s && (
             <Segmented<Resolution>
               size="sm"

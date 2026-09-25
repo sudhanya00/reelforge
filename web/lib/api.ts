@@ -48,7 +48,12 @@ export interface AppState {
   fake: boolean;
   projects_dir: string;
   typical_s: Record<string, number>;
+  styles: { id: string; label: string; pacing: Pacing }[];
+  pacing: { id: Pacing; label: string; brief: string }[];
+  planner_version: string;
 }
+
+export type Pacing = "calm" | "balanced" | "kinetic";
 
 export interface ProjectSummary {
   id: string;
@@ -111,9 +116,21 @@ export interface Take {
   motion: { dead: [number, number][]; dead_s: number; cuts: number[] } | null;
 }
 
+export interface Beat {
+  t_start: number;
+  t_end: number;
+  action: string;
+  camera: string;
+  cut?: boolean;
+  hold?: boolean;
+}
+
 export interface PlanScene {
   id: string;
   duration_s: number;
+  beats?: Beat[];
+  multi_shot?: boolean;
+  risks?: { what: string; handling: string }[];
   refs: string[];
   shot: string;
   action: string;
@@ -149,7 +166,14 @@ export interface Environment {
 export interface Plan {
   title: string;
   logline: string;
-  style: { look: string; color_grade: string; lens: string; avoid: string };
+  style: {
+    look: string; color_grade: string; lens: string; avoid: string;
+    medium?: string; motion?: string; camera_grammar?: string; sheet_look?: string;
+  };
+  pacing?: Pacing;
+  director_notes?: { scene: string; change: string; reason: string }[];
+  brief?: { story: string; style: string; preset: string | null; pacing: Pacing | null };
+  planner?: string;
   characters: Character[];
   props: Prop[];
   environments: Environment[];
@@ -180,7 +204,7 @@ export interface Project {
 
 export interface Job {
   id: string;
-  kind: "plan" | "film" | "assets" | "take" | "edit" | "produce" | "stitch" | "review";
+  kind: "plan" | "film" | "assets" | "take" | "edit" | "produce" | "stitch" | "review" | "direct";
   label: string;
   project: string | null;
   claims: string[];
@@ -227,7 +251,8 @@ export const api = {
     call<AppState>("PUT", "/api/settings", s),
   checkConnection: () =>
     call<{ ok: boolean; message: string; models: Record<string, boolean> }>("POST", "/api/settings/check"),
-  newFilm: (b: { story: string; style: string; scenes: number; orientation: Orientation; auto: boolean }) =>
+  newFilm: (b: { story: string; style: string; scenes: number; orientation: Orientation; auto: boolean;
+                  preset: string | null; pacing: Pacing }) =>
     call<Job>("POST", "/api/projects", b),
   savePlan: (id: string, plan: Plan) => call<Project>("PUT", `/api/projects/${id}/plan`, { plan }),
   setPrompt: (id: string, item: string, prompt: string | null, provider?: string) =>
@@ -242,6 +267,7 @@ export const api = {
   fix: (id: string, scene: string, take: string, instruction: string) =>
     call<Job>("POST", `/api/projects/${id}/scenes/${scene}/takes/${take}/edit`, { instruction }),
   produce: (id: string) => call<Job>("POST", `/api/projects/${id}/produce`),
+  direct: (id: string) => call<Job>("POST", `/api/projects/${id}/direct`),
   review: (id: string, scene: string, take: string) =>
     call<Job>("POST", `/api/projects/${id}/scenes/${scene}/takes/${take}/review`),
   stitch: (id: string) => call<Job>("POST", `/api/projects/${id}/stitch`),

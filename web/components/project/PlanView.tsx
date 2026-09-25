@@ -3,13 +3,18 @@
 import * as React from "react";
 import { Braces, Clapperboard, Mic, MapPin, Package, Palette, Plus, Trash2, Users } from "lucide-react";
 import { Badge, InlineText, Segmented, Textarea, Tip } from "@/components/ui/primitives";
-import type { Plan, PlanScene, Project } from "@/lib/api";
+import type { Beat, Pacing, Plan, PlanScene, Project } from "@/lib/api";
+import { useAppState } from "@/lib/hooks";
+import { useProjectActions } from "./actions";
+import { BeatsEditor, DirectorNotes } from "./Beats";
 import { cn } from "@/lib/utils";
 
 type Update = (fn: (p: Plan) => void) => void;
 
 export function PlanView({ p, draft, setDraft }: { p: Project; draft: Plan; setDraft: (p: Plan | null) => void }) {
   const [raw, setRaw] = React.useState(false);
+  const act = useProjectActions(p);
+  const { data: state } = useAppState();
   const update: Update = (fn) => {
     const next = structuredClone(draft);
     fn(next);
@@ -43,6 +48,7 @@ export function PlanView({ p, draft, setDraft }: { p: Project; draft: Plan; setD
       </aside>
 
       <div className="min-w-0 space-y-12">
+        <DirectorNotes p={p} plan={p.plan} dirty={JSON.stringify(draft) !== JSON.stringify(p.plan)} onDirect={act.direct} />
         <p className="-mt-2 text-sm text-muted-foreground">
           This is the production plan every image and clip is built from. Edit anything by clicking it — prompts are rebuilt from it, so the look stays consistent.
           {Object.keys(p.plan.prompt_overrides ?? {}).length > 0 && " Items with a custom prompt keep their custom prompt."}
@@ -52,12 +58,24 @@ export function PlanView({ p, draft, setDraft }: { p: Project; draft: Plan; setD
           <>
             <Section id="style" title="Style" hint="Applied to every image and clip">
               <Card className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-                {(["look", "color_grade", "lens", "avoid"] as const).map((k) => (
-                  <Field key={k} label={{ look: "Look", color_grade: "Colour grade", lens: "Lens", avoid: "Avoid" }[k]}>
-                    <InlineText value={draft.style[k]} onChange={(v) => update((d) => void (d.style[k] = v))} />
+                {STYLE_FIELDS.filter(([k]) => k in draft.style).map(([k, label]) => (
+                  <Field key={k} label={label}>
+                    <InlineText value={draft.style[k] ?? ""} onChange={(v) => update((d) => void (d.style[k] = v))} />
                   </Field>
                 ))}
               </Card>
+              {state && (
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-medium text-muted-foreground">Pacing</span>
+                  <Segmented<Pacing>
+                    size="sm"
+                    value={draft.pacing ?? "balanced"}
+                    onChange={(v) => update((d) => void (d.pacing = v))}
+                    options={state.pacing.map((x) => ({ value: x.id, label: x.label, title: x.brief }))}
+                  />
+                  <span className="text-xs text-muted-foreground">{state.pacing.find((x) => x.id === (draft.pacing ?? "balanced"))?.brief}</span>
+                </div>
+              )}
             </Section>
 
             <Section id="cast" title="Cast" hint="Each gets a turnaround reference sheet">
@@ -115,6 +133,11 @@ export function PlanView({ p, draft, setDraft }: { p: Project; draft: Plan; setD
   );
 }
 
+const STYLE_FIELDS = [
+  ["medium", "Medium"], ["look", "Look"], ["color_grade", "Colour grade"], ["lens", "Lens"],
+  ["motion", "Motion"], ["camera_grammar", "Camera grammar"], ["sheet_look", "Reference sheets"], ["avoid", "Avoid"],
+] as const;
+
 function SceneEditor({ sc, i, plan, update }: { sc: PlanScene; i: number; plan: Plan; update: Update }) {
   const set = <K extends keyof PlanScene>(k: K, v: PlanScene[K]) => update((d) => void (d.scenes[i][k] = v));
   const groups = [
@@ -138,17 +161,25 @@ function SceneEditor({ sc, i, plan, update }: { sc: PlanScene; i: number; plan: 
       <Card className="mb-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-muted-foreground">{sc.id}</span>
-          <div className="flex h-7 items-center rounded-full bg-muted px-2 text-xs font-medium">
-            <input
-              type="number"
-              min={2}
-              max={10}
-              value={sc.duration_s}
-              onChange={(e) => set("duration_s", Math.max(2, Math.min(10, Number(e.target.value) || 6)))}
-              className="w-7 bg-transparent text-center tabular outline-none"
-            />
-            s
-          </div>
+          {sc.beats?.length ? (
+            <Tip content="Set by the beats">
+              <span className="flex h-7 items-center rounded-full bg-muted px-2.5 text-xs font-medium tabular">
+                {Math.max(2, Math.ceil(sc.beats.at(-1)!.t_end - 1e-6))}s
+              </span>
+            </Tip>
+          ) : (
+            <div className="flex h-7 items-center rounded-full bg-muted px-2 text-xs font-medium">
+              <input
+                type="number"
+                min={2}
+                max={10}
+                value={sc.duration_s}
+                onChange={(e) => set("duration_s", Math.max(2, Math.min(10, Number(e.target.value) || 6)))}
+                className="w-7 bg-transparent text-center tabular outline-none"
+              />
+              s
+            </div>
+          )}
           <Segmented
             size="sm"
             value={sc.continuity}
@@ -160,8 +191,21 @@ function SceneEditor({ sc, i, plan, update }: { sc: PlanScene; i: number; plan: 
           />
         </div>
         <InlineText value={sc.action} onChange={(v) => set("action", v)} className="text-[15px] font-medium" />
+        {sc.beats && (
+          <BeatsEditor
+            sc={sc}
+            onChange={(beats: Beat[], multi?: boolean) =>
+              update((d) => {
+                const s2 = d.scenes[i];
+                s2.beats = beats;
+                if (multi !== undefined) s2.multi_shot = multi;
+                if (beats.length) s2.duration_s = Math.max(2, Math.ceil(beats.at(-1)!.t_end - 1e-6));
+              })
+            }
+          />
+        )}
         <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-          <Field label="Shot"><InlineText value={sc.shot} onChange={(v) => set("shot", v)} className="text-sm" /></Field>
+          <Field label={sc.beats ? "Opening framing" : "Shot"}><InlineText value={sc.shot} onChange={(v) => set("shot", v)} className="text-sm" /></Field>
           <Field label="Camera"><InlineText value={sc.camera} onChange={(v) => set("camera", v)} className="text-sm" /></Field>
           <Field label="Lighting"><InlineText value={sc.lighting} onChange={(v) => set("lighting", v)} className="text-sm" /></Field>
           <Field label="Sound"><InlineText value={sc.audio} onChange={(v) => set("audio", v)} className="text-sm" /></Field>

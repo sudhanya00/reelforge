@@ -60,7 +60,7 @@ export function useJobWatcher(onOpen: (project: string, tab?: string) => void) {
       if (j.project) mutate(`/api/projects/${j.project}`);
       const project = j.project;
       if (j.status === "done") {
-        const tab = { assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan" }[j.kind];
+        const tab = { assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan", direct: "plan" }[j.kind];
         toast.success(doneMessage(j), {
           action: project ? { label: "Open", onClick: () => onOpen(project, tab) } : undefined,
         });
@@ -82,6 +82,7 @@ function doneMessage(j: Job) {
     case "stitch": return "Final cut stitched";
     case "produce": return "Everything is made";
     case "review": return j.label.replace("Reviewing", "Review of") + " is ready";
+    case "direct": return "The director has revised the plan";
   }
 }
 
