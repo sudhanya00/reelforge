@@ -552,6 +552,8 @@ def edit_take(client, s: Settings, proj: Project, scene_id: str, take: Path,
     meta = json.loads(take.with_suffix(".json").read_text(encoding="utf-8"))
     text = instruction.strip()
     if "keep everything else" not in text.lower():
+        if not text.endswith((".", "!", "?")):
+            text += "."
         text += " Keep everything else the same."
     # same format as the source take, so the edit comes back as video at its res/aspect
     interaction = client.interactions.create(
