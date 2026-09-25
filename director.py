@@ -115,17 +115,21 @@ Write every scene as timed BEATS. This is the heart of the plan:
   visible physical cause comes out as gliding.
 - For every beat, give the framing and any camera move with its motivation (e.g. "slow push from
   medium to close-up as she reads"). No unmotivated pans or drifts.
-- Default to one continuous shot per clip. Set multi_shot=true only when coverage genuinely helps
-  (a dialogue exchange, a reveal, action from two angles): at most 3 shots, each at least 2 s,
-  with cut=true on the first beat of each new shot.
+- One continuous shot per clip: multi_shot=false. Cuts inside a clip make current models redraw
+  costumes and props at the cut. Get coverage from separate scenes instead.
 - scene.action is a one-line summary; scene.shot the opening framing; scene.camera the overall plan.
 
 Staging that current video models render well, without losing any story:
 - Prefer staging that reads clearly: movement across the frame, clear silhouettes, one centre of
   attention at a time, objects already in hand rather than handed over.
-- When the story needs something hard (a vehicle turning toward camera, a hand-off, a crowd, hands
-  on clothing), keep it and describe it precisely: path, speed, start and end framing, what the
+- When the story needs something hard (a vehicle turning toward camera, a crowd, hands on
+  clothing), keep it and describe it precisely: path, speed, start and end framing, what the
   hands do.
+- Hand-offs and fingers working small objects fail even when described precisely. Let the edit
+  carry them: one scene ends as the object is offered, the next opens with it already held.
+  The story keeps the moment; the model never has to render the exchange.
+- Keep camera moves within one beat moderate (medium to close-up, not wide to extreme close-up);
+  a very large push-in can come out as a cross-dissolve.
 - Don't make a scene depend on reading text; the story must survive if text is illegible.
 
 Rules:
@@ -157,7 +161,13 @@ Check every scene for:
    grammar. No aimless pans or drifts.
 3. Failure modes of today's video models:
    - complex 3D rotation of bodies or vehicles toward or around the camera (morphing)
-   - hands handling fabric, small objects or other people in close-up; objects handed over
+   - hands handling fabric, small objects or other people in close-up; objects handed over.
+     Precise description is not enough for a hand-off (both round-2 takes merged fingers into the
+     envelope): imply it across a scene boundary instead: offered at the end of one scene,
+     already held at the start of the next. That keeps the story beat.
+   - cuts inside a clip (costumes and props get redrawn at the cut): use one continuous shot per
+     clip unless multi_shot cuts are explicitly allowed
+   - very large camera moves within one beat (can render as a cross-dissolve): keep them moderate
    - legible text on props, signs or screens (comes out garbled)
    - crowds where individuals matter; fast intricate choreography; liquids being poured
    - vehicles and bodies that move without a visible cause (wheels not turning, gliding): say
@@ -213,11 +223,15 @@ def director_prompt(plan: dict) -> str:
 
 # ---------------------------------------------------------------- normalise
 
-def normalize(plan: dict) -> dict:
+def normalize(plan: dict, allow_multi_shot: bool = True) -> dict:
     """Make beat timings consistent: sorted, starting at 0, contiguous-ish, and each scene's
-    duration equal to the end of its last beat. Cuts only in multi-shot scenes."""
+    duration equal to the end of its last beat. Cuts only in multi-shot scenes.
+    allow_multi_shot=False turns in-clip cuts off (planner/director output, see RND round 2);
+    a person editing the plan can still turn them on per scene."""
     plan = copy.deepcopy(plan)
     for sc in plan.get("scenes", []):
+        if not allow_multi_shot:
+            sc["multi_shot"] = False
         beats = sorted(sc.get("beats") or [], key=lambda b: b.get("t_start", 0))
         if not beats:
             continue

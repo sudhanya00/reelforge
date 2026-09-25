@@ -93,3 +93,16 @@ def test_director_knows_round_one_lessons():
     for text in (director.PLANNER_V2_SYSTEM, director.DIRECTOR_SYSTEM):
         assert "wheels" in text and "35mm" in text
     assert "shorter duration" in director.DIRECTOR_SYSTEM
+
+
+def test_planner_output_has_no_in_clip_cuts_by_default():
+    p, sc = scene(multi=True)
+    out = director.normalize(p, allow_multi_shot=False)["scenes"][0]
+    assert out["multi_shot"] is False and not any(b.get("cut") for b in out["beats"])
+    kept = director.normalize(p)["scenes"][0]                  # a person's edit keeps the cut
+    assert kept["multi_shot"] is True and kept["beats"][2]["cut"] is True
+
+
+def test_director_knows_round_two_lessons():
+    assert "implied" in director.DIRECTOR_SYSTEM or "imply" in director.DIRECTOR_SYSTEM
+    assert "cross-dissolve" in director.DIRECTOR_SYSTEM and "multi_shot=false" in director.PLANNER_V2_SYSTEM

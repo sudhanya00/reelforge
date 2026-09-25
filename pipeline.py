@@ -95,6 +95,7 @@ class Settings:
     kling_model: str = "kling-3.0-omni"
     kling_audio: bool = True                             # native audio (costs more on Kling)
     planner_version: str = "v2"                          # v2: timed beats + director pass; v1 kept for A/B
+    allow_in_clip_cuts: bool = False                     # planner/director may cut inside a clip (RND round 2: off)
     max_retries: int = 4                                 # on 429 / 5xx only
     image_workers: int = 2                               # parallel reference images (Vertex quotas are tight)
     retry_base_s: float = 15.0                           # waits 15s, 45s, 2m, 2m: outlasts per-minute quotas
@@ -444,7 +445,7 @@ def direct_plan(client, s: Settings, plan: dict) -> tuple[dict, list[dict], dict
     (revised plan with the project's own fields kept, notes, usage)."""
     out, usage = _json_call(client, s, director.DIRECTOR_SYSTEM, director.director_prompt(plan),
                             director.DIRECTOR_SCHEMA, "direct")
-    revised = director.normalize(out["plan"])
+    revised = director.normalize(out["plan"], allow_multi_shot=s.allow_in_clip_cuts)
     revised.update({k: plan[k] for k in director.PROJECT_KEYS if k in plan})
     revised["director_notes"] = out["notes"]
     return revised, out["notes"], usage
@@ -456,7 +457,7 @@ def plan_story(client: genai.Client, s: Settings, story: str, style: str,
     if s.planner_version == "v2":
         prompt = director.planner_prompt(story, style, n_scenes, s.orientation, preset, pacing)
         draft, usage = _json_call(client, s, director.PLANNER_V2_SYSTEM, prompt, director.PLAN_SCHEMA_V2, "plan")
-        draft = director.normalize(draft)
+        draft = director.normalize(draft, allow_multi_shot=s.allow_in_clip_cuts)
         draft["orientation"] = s.orientation
         draft["brief"] = {"story": story, "style": style, "preset": preset, "pacing": draft.get("pacing") or pacing}
         draft["planner"] = "v2"
