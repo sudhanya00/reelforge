@@ -1,8 +1,12 @@
 """Fake Gemini client and a small test plan, shared by the offline tests."""
 import base64
+import hashlib
 import io
 import json
 import shutil
+import subprocess
+import time
+from pathlib import Path
 from types import SimpleNamespace as NS
 
 from PIL import Image
@@ -34,17 +38,35 @@ PLAN = {
 }
 
 
-def _png(fmt="PNG") -> bytes:
+def _png(fmt="PNG", aspect="16:9", seed="") -> bytes:
+    """A flat placeholder in the requested aspect, coloured by `seed` so cards differ."""
+    w, h = (64, 36) if aspect == "16:9" else (36, 64)
+    rgb = tuple(40 + b % 150 for b in hashlib.md5(seed.encode()).digest()[:3]) if seed else (40, 60, 90)
     buf = io.BytesIO()
-    Image.new("RGB", (64, 36), (40, 60, 90)).save(buf, format=fmt)
+    Image.new("RGB", (w * 10, h * 10), rgb).save(buf, format=fmt)
     return buf.getvalue()
+
+
+def demo_clip(path: Path) -> dict[str, bytes]:
+    """Short test clips in both orientations for demo mode (cached next to `path`)."""
+    out = {}
+    for aspect, size in (("16:9", "640x360"), ("9:16", "360x640")):
+        p = Path(path).with_name(f"{Path(path).stem}_{aspect.replace(':', 'x')}.mp4")
+        if not p.exists() and HAS_FFMPEG:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=d=4:s={size}:r=24",
+                            "-f", "lavfi", "-i", "sine=d=4:f=220", "-shortest", "-c:v", "libx264",
+                            "-pix_fmt", "yuv420p", "-c:a", "aac", str(p)], check=True)
+        out[aspect] = p.read_bytes() if p.exists() else b"not-a-real-mp4"
+    return out
 
 
 class FakeClient:
     """Records every call; returns canned plan / image / video responses."""
 
-    def __init__(self, mp4: bytes, image_mime="image/png"):
+    def __init__(self, mp4: bytes | dict[str, bytes], image_mime="image/png", delay=False):
         self.calls, self.mp4, self.image_mime = [], mp4, image_mime
+        self.delay = delay        # demo mode: take a few seconds like the real thing
         self.fail_save = False
         # exceptions to raise on the next calls of each kind, in order
         self.errors = {"plan": [], "image": [], "video": []}
@@ -58,10 +80,14 @@ class FakeClient:
 
     def _generate_content(self, model, contents, config):
         self.calls.append(("generate_content", model, contents, config))
-        self._maybe_fail("image" if config.response_modalities == ["IMAGE"] else "plan")
+        is_image = config.response_modalities == ["IMAGE"]
+        self._maybe_fail("image" if is_image else "plan")
+        if self.delay:
+            time.sleep(3 if is_image else 4)
         usage = NS(prompt_token_count=1000, candidates_token_count=2000, thoughts_token_count=500)
-        if config.response_modalities == ["IMAGE"]:
-            data = _png("JPEG" if self.image_mime == "image/jpeg" else "PNG")
+        if is_image:
+            data = _png("JPEG" if self.image_mime == "image/jpeg" else "PNG",
+                        config.image_config.aspect_ratio, str(contents[-1]))
             part = NS(inline_data=NS(data=data, mime_type=self.image_mime))
             return NS(candidates=[NS(content=NS(parts=[part]), finish_reason="STOP")],
                       usage_metadata=usage, text=None)
@@ -70,8 +96,12 @@ class FakeClient:
     def _create(self, **kw):
         self.calls.append(("interactions.create", kw))
         self._maybe_fail("video")
+        if self.delay:
+            time.sleep(8)
         self._n += 1
-        video = None if self.fail_save else NS(data=base64.b64encode(self.mp4).decode(), uri=None)
+        aspect = kw.get("response_format", {}).get("aspect_ratio", "16:9")
+        clip = self.mp4 if isinstance(self.mp4, bytes) else self.mp4[aspect]
+        video = None if self.fail_save else NS(data=base64.b64encode(clip).decode(), uri=None)
         return NS(id=f"ix{self._n}", status="completed", output_video=video, errors=None,
                   usage=NS(total_input_tokens=3610, total_output_tokens=11586, total_thought_tokens=772))
 

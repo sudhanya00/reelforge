@@ -5,3 +5,9 @@ __pycache__/
 projects/
 .pytest_cache/
 .claude/
+reelforge.settings.json
+projects-demo/
+web/node_modules/
+web/.next/
+web/out/
+web/next-env.d.ts

@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -294,10 +295,13 @@ class Project:
         return self.scene_dir(scene_id) / f"take_{len(self.takes(scene_id)) + 1:02d}.mp4"
 
     # log
+    _log_lock = threading.Lock()        # jobs may log from several threads at once
+
     def log(self, **entry) -> None:
         entry["ts"] = datetime.now().isoformat(timespec="seconds")
-        with open(self.root / "log.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        line = json.dumps(entry, ensure_ascii=False) + "\n"
+        with self._log_lock, open(self.root / "log.jsonl", "a", encoding="utf-8") as f:
+            f.write(line)
 
 
 # --------------------------------------------------------------------------
@@ -706,25 +710,35 @@ def selected_take(plan: dict, proj: Project, scene_id: str) -> Path | None:
     return takes[-1] if takes else None
 
 
-def build_scene_request(plan: dict, proj: Project, scene: dict) -> tuple[str, list[dict], list[str]]:
-    """Returns (prompt, input_parts, ref_ids_used)."""
+def previous_take(plan: dict, proj: Project, scene: dict) -> Path | None:
+    """For a continuous scene: the previous scene's selected take, whose last frame starts it."""
+    if scene.get("continuity") != "continuous":
+        return None
+    ids = [sc["id"] for sc in plan["scenes"]]
+    i = ids.index(scene["id"])
+    return selected_take(plan, proj, ids[i - 1]) if i > 0 else None
+
+
+def build_scene_request(plan: dict, proj: Project, scene: dict,
+                        extract: bool = True) -> tuple[str, list[dict], list[str]]:
+    """Returns (prompt, input_parts, ref_ids_used). extract=False is a cheap preview for
+    UIs: no ffmpeg frame extraction and no image encoding (input_parts is empty)."""
     idx = _lookup(plan)
     # environments first, then characters, then props; skip refs with no image yet
     order = {"environments": 0, "characters": 1, "props": 2}
     ref_ids = sorted([r for r in scene["refs"] if r in idx and proj.asset_path(r).exists()],
                      key=lambda r: order[idx[r][0]])
 
+    prev = previous_take(plan, proj, scene)
     first_frame_img = None
-    if scene.get("continuity") == "continuous":
-        ids = [sc["id"] for sc in plan["scenes"]]
-        i = ids.index(scene["id"])
-        if i > 0:
-            prev = selected_take(plan, proj, ids[i - 1])
-            if prev:
-                first_frame_img = extract_last_frame(prev, proj.root / "frames" / f"{scene['id']}_first.png")
+    if prev and extract:
+        first_frame_img = extract_last_frame(prev, proj.root / "frames" / f"{scene['id']}_first.png")
+    has_first = bool(first_frame_img) if extract else bool(prev and shutil.which("ffmpeg"))
 
     prompt = plan.get("prompt_overrides", {}).get(scene["id"]) or \
-        scene_prompt(plan, scene, ref_ids, first_frame=bool(first_frame_img))
+        scene_prompt(plan, scene, ref_ids, first_frame=has_first)
+    if not extract:
+        return prompt, [], ref_ids
 
     parts = []
     if first_frame_img:
