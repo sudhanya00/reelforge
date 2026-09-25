@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, PlugZap, RectangleHorizontal, RectangleVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger, Input, Label, Segmented, Spinner } from "@/components/ui/primitives";
-import { useAppState } from "@/lib/hooks";
+import { providerInfo, resolutionFor, useAppState, videoUsd } from "@/lib/hooks";
 import { api, type Backend, type Resolution, type Settings } from "@/lib/api";
 import { cn, usd } from "@/lib/utils";
 
@@ -43,13 +43,62 @@ export function SettingsDialog({ children }: { children: React.ReactNode }) {
           <div className="flex justify-center p-10"><Spinner /></div>
         ) : (
           <div className="divide-y">
+            <Section title="Video model" description="Shoots every scene unless a scene picks another model.">
+              <div className="space-y-2">
+                {s.providers.map((pr) => {
+                  const on = pr.id === s.video_provider;
+                  const res = resolutionFor(pr, s.resolution);
+                  return (
+                    <button
+                      key={pr.id}
+                      disabled={!pr.configured}
+                      onClick={() => !on && save({ video_provider: pr.id })}
+                      className={cn(
+                        "flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed",
+                        on ? "border-foreground/40 bg-accent/60" : "hover:bg-accent/40",
+                      )}
+                    >
+                      <span className={cn("mt-1 flex size-4 shrink-0 items-center justify-center rounded-full border", on && "border-foreground")}>
+                        {on && <span className="size-2 rounded-full bg-foreground" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span className="text-sm font-medium">{pr.label}</span>
+                          <span className="text-xs text-muted-foreground tabular">
+                            {usd(pr.price_per_s[res], 3)}/s at {res}
+                          </span>
+                        </span>
+                        <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">{pr.model}</span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {pr.configured
+                            ? `${pr.caps.durations[0]}-${pr.caps.durations[1]}s clips · ${pr.caps.resolutions.join(", ")} · up to ${pr.caps.max_refs} reference images`
+                            : pr.setup}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {providerInfo(s, "kling")?.configured && (
+                <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
+                  <span>
+                    Kling native audio
+                    <span className="ml-1.5 text-xs text-muted-foreground">sound design and dialogue; costs a little more</span>
+                  </span>
+                  <input type="checkbox" checked={s.kling_audio} onChange={(e) => save({ kling_audio: e.target.checked })} className="size-4 accent-foreground" />
+                </label>
+              )}
+            </Section>
+
             <Section title="Generation">
               <Field label="Video resolution" hint="720p for films, 360p for cheap tests">
                 <Segmented<Resolution>
                   value={s.resolution}
                   onChange={(v) => save({ resolution: v })}
                   options={(["360p", "720p", "1080p", "4k"] as Resolution[]).map((r) => {
-                    const blocked = s.backend === "vertex" && (r === "1080p" || r === "4k");
+                    const def = providerInfo(s);
+                    const blocked = s.video_provider === "gemini-omni" && s.backend === "vertex" && (r === "1080p" || r === "4k");
+                    const mapped = resolutionFor(def, r) !== r;
                     return {
                       value: r,
                       disabled: blocked,
@@ -57,7 +106,9 @@ export function SettingsDialog({ children }: { children: React.ReactNode }) {
                       label: (
                         <span className="flex flex-col items-center leading-tight">
                           <span>{r}</span>
-                          <span className="text-[10px] font-normal opacity-60 tabular">{usd(s.prices.video_per_s[r], 3)}/s</span>
+                          <span className="text-[10px] font-normal opacity-60 tabular">
+                            {mapped ? `→ ${resolutionFor(def, r)}` : `${usd(videoUsd(s, 1, r), 3)}/s`}
+                          </span>
                         </span>
                       ),
                     };

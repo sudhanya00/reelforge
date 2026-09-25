@@ -9,6 +9,25 @@ export type Orientation = "9:16" | "16:9";
 export type Backend = "vertex" | "gemini";
 type Models = { planner_model: string; image_model: string; video_model: string };
 
+export interface ProviderInfo {
+  id: string;
+  label: string;
+  model: string;
+  configured: boolean;
+  setup: string;
+  caps: {
+    resolutions: Resolution[];
+    durations: [number, number];
+    aspects: string[];
+    max_refs: number;
+    first_frame: boolean;
+    edit: boolean;
+    audio: boolean;
+  };
+  price_per_s: Partial<Record<Resolution, number>>;
+  edit_price_per_s: Partial<Record<Resolution, number>>;
+}
+
 export interface Settings extends Models {
   backend: Backend;
   gcp_project: string;
@@ -16,6 +35,9 @@ export interface Settings extends Models {
   resolution: Resolution;
   image_size: "1K" | "2K" | "4K";
   orientation: Orientation;
+  video_provider: string;
+  kling_audio: boolean;
+  providers: ProviderInfo[];
   default_models: Record<Backend, Models>;
   prices: { image: number; video_per_s: Record<Resolution, number> };
 }
@@ -70,6 +92,8 @@ export interface Take {
   edit: string | null;
   prompt: string | null;
   created: number;
+  provider: string;
+  model: string | null;
 }
 
 export interface PlanScene {
@@ -91,6 +115,10 @@ export interface Scene extends PlanScene {
   overridden: boolean;
   refs_used: string[];
   refs_missing: string[];
+  provider: string;
+  provider_chosen: boolean;
+  /** what it will actually be shot at, after mapping to the provider's limits */
+  render: { resolution: Resolution; duration_s: number };
   takes: Take[];
   selected: string | null;
   status: ItemStatus;
@@ -187,8 +215,10 @@ export const api = {
   newFilm: (b: { story: string; style: string; scenes: number; orientation: Orientation; auto: boolean }) =>
     call<Job>("POST", "/api/projects", b),
   savePlan: (id: string, plan: Plan) => call<Project>("PUT", `/api/projects/${id}/plan`, { plan }),
-  setPrompt: (id: string, item: string, prompt: string | null) =>
-    call<Project>("PUT", `/api/projects/${id}/prompt`, { id: item, prompt }),
+  setPrompt: (id: string, item: string, prompt: string | null, provider?: string) =>
+    call<Project>("PUT", `/api/projects/${id}/prompt`, { id: item, prompt, provider: provider ?? null }),
+  setSceneProvider: (id: string, scene: string, provider: string | null) =>
+    call<Project>("PUT", `/api/projects/${id}/scenes/${scene}/provider`, { provider }),
   select: (id: string, scene: string, take: string) =>
     call<Project>("PUT", `/api/projects/${id}/scenes/${scene}/selected`, { take }),
   makeAssets: (id: string, ids?: string[], force = false) =>

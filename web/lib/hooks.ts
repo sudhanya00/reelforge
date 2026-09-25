@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { fetcher, type AppState, type Job, type Project, type ProjectSummary, type Resolution, type Settings } from "./api";
+import { fetcher, type AppState, type Job, type Project, type ProjectSummary, type ProviderInfo, type Resolution, type Settings } from "./api";
 
 export function useAppState() {
   return useSWR<AppState>("/api/state", fetcher, { revalidateOnFocus: true });
@@ -86,9 +86,27 @@ function doneMessage(j: Job) {
 
 // ---------------------------------------------------------------- estimates
 
-export function videoUsd(s: Settings | undefined, seconds: number, res?: Resolution | null) {
-  if (!s) return 0;
-  return (s.prices.video_per_s[res ?? s.resolution] ?? 0) * seconds;
+export function providerInfo(s: Settings | undefined, id?: string | null) {
+  return s?.providers.find((p) => p.id === (id ?? s.video_provider));
+}
+
+const RES_ORDER: Resolution[] = ["360p", "720p", "1080p", "4k"];
+
+/** The requested resolution, or the nearest one the provider offers (Kling starts at 720p). */
+export function resolutionFor(p: ProviderInfo | undefined, requested: Resolution): Resolution {
+  if (!p || p.caps.resolutions.includes(requested)) return requested;
+  const want = RES_ORDER.indexOf(requested);
+  return [...p.caps.resolutions].sort(
+    (a, b) => Math.abs(RES_ORDER.indexOf(a) - want) - Math.abs(RES_ORDER.indexOf(b) - want),
+  )[0];
+}
+
+/** List price of `seconds` of video from a provider (default: the settings' one). */
+export function videoUsd(s: Settings | undefined, seconds: number, res?: Resolution | null, provider?: string | null, edit = false) {
+  const p = providerInfo(s, provider);
+  if (!s || !p) return 0;
+  const r = resolutionFor(p, res ?? s.resolution);
+  return ((edit ? p.edit_price_per_s : p.price_per_s)[r] ?? 0) * seconds;
 }
 
 export function imageUsd(s: Settings | undefined, n = 1) {

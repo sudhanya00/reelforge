@@ -220,7 +220,7 @@ def test_scene_provider_choice_prompt_and_take(api, pid, kling_api):
     s01 = v["scenes"][0]
     assert s01["provider"] == "kling" and s01["provider_chosen"]
     assert "@image" in s01["prompt"] or "Shot:" in s01["prompt"]
-    assert s01["shot"] == {"resolution": "720p", "duration_s": 6}
+    assert s01["render"] == {"resolution": "720p", "duration_s": 6}
     # a kling-specific prompt override doesn't leak into the omni prompt
     v = api.put(f"/api/projects/{pid}/prompt", json={"id": "s01", "prompt": "K", "provider": "kling"}).json()
     assert v["scenes"][0]["prompt"] == "K" and v["scenes"][0]["overridden"]

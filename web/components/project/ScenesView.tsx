@@ -4,8 +4,8 @@ import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowUp, ChevronDown, Clapperboard, Link2, Plus, RefreshCw, RotateCcw, TriangleAlert, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge, LiveBars, Spinner, Textarea, Tip } from "@/components/ui/primitives";
-import { useJobs, videoUsd } from "@/lib/hooks";
+import { Badge, LiveBars, Segmented, Spinner, Textarea, Tip } from "@/components/ui/primitives";
+import { providerInfo, useJobs, videoUsd } from "@/lib/hooks";
 import { JobProgress } from "@/components/progress";
 import { url, type Asset, type Project, type Scene, type Take } from "@/lib/api";
 import { cn, secs, usd } from "@/lib/utils";
@@ -65,7 +65,9 @@ function SceneCard({ p, sc, index }: { p: Project; sc: Scene; index: number }) {
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-md bg-foreground px-1.5 py-0.5 font-mono text-[11px] font-semibold text-background">{sc.id}</span>
-            <Badge tone="outline" className="tabular">{sc.duration_s}s</Badge>
+            <Tip content={sc.render.duration_s !== sc.duration_s ? `Planned ${sc.duration_s}s; this model shoots ${sc.render.duration_s}s minimum` : null}>
+              <Badge tone="outline" className="tabular">{sc.render.duration_s}s</Badge>
+            </Tip>
             {sc.continuity === "continuous" && prev && (
               <Tip content={`Starts on the last frame of ${prev.id}'s selected take`}>
                 <Badge tone="outline">
@@ -74,9 +76,11 @@ function SceneCard({ p, sc, index }: { p: Project; sc: Scene; index: number }) {
                 </Badge>
               </Tip>
             )}
+            <ModelPicker p={p} sc={sc} />
             {take && (
               <span className="ml-auto text-xs text-muted-foreground tabular">
-                {take.name.replace(".mp4", "").replace("_", " ")} · {secs(take.duration_s)} · {take.resolution} · {usd(take.cost_usd)}
+                {take.name.replace(".mp4", "").replace("_", " ")} · {shortLabel(take.provider)} · {secs(take.duration_s)} ·{" "}
+                {take.resolution} · {usd(take.cost_usd)}
               </span>
             )}
           </div>
@@ -120,7 +124,7 @@ function Stage({ p, sc, take, vertical }: { p: Project; sc: Scene; take?: Take; 
   const generating = sc.status === "generating";
   // a whole-film run shoots one scene at a time; the others are waiting their turn
   const queued = generating && !!job && job.claims.includes("*") && job.progress?.label !== `Shooting ${sc.id}`;
-  const est = videoUsd(act.settings, sc.duration_s);
+  const est = videoUsd(act.settings, sc.render.duration_s, null, sc.provider);
   const refImages = sc.refs_used.map((r) => p.assets.find((a) => a.id === r)?.image).filter(Boolean) as string[];
 
   return (
@@ -195,7 +199,7 @@ function Stage({ p, sc, take, vertical }: { p: Project; sc: Scene; take?: Take; 
 function TakeStrip({ p, sc, vertical }: { p: Project; sc: Scene; vertical: boolean }) {
   const act = useProjectActions(p);
   if (!sc.takes.length) return null;
-  const est = videoUsd(act.settings, sc.duration_s);
+  const est = videoUsd(act.settings, sc.render.duration_s, null, sc.provider);
   return (
     <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
       {sc.takes.map((t, i) => {
@@ -207,7 +211,7 @@ function TakeStrip({ p, sc, vertical }: { p: Project; sc: Scene; vertical: boole
               <span className="block space-y-0.5">
                 <span className="block font-medium">Take {i + 1}{t.edited_from ? ` · fix of ${t.edited_from.replace(".mp4", "")}` : ""}</span>
                 {t.edit && <span className="block opacity-80">“{t.edit.replace(" Keep everything else the same.", "")}”</span>}
-                <span className="block opacity-70 tabular">{secs(t.duration_s)} · {t.resolution} · {usd(t.cost_usd)}</span>
+                <span className="block opacity-70 tabular">{shortLabel(t.provider)} · {secs(t.duration_s)} · {t.resolution} · {usd(t.cost_usd)}</span>
               </span>
             }
           >
@@ -274,14 +278,14 @@ function PromptPanel({ p, sc }: { p: Project; sc: Scene }) {
   React.useEffect(() => { if (!editing) setText(sc.prompt); }, [sc.prompt, editing]);
 
   const save = async (value: string | null) => {
-    if (await act.setPrompt(sc.id, value)) setEditing(false);
+    if (await act.setPrompt(sc.id, value, sc.provider)) setEditing(false);
   };
 
   return (
     <div className="rounded-xl border bg-background/50">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground">
         <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} />
-        Prompt sent to the video model
+        Prompt sent to {providerInfo(act.settings, sc.provider)?.label ?? "the video model"}
         {sc.overridden && <Badge tone="live" className="ml-1">custom</Badge>}
       </button>
       <AnimatePresence initial={false}>
@@ -322,7 +326,8 @@ function FixComposer({ p, sc, take }: { p: Project; sc: Scene; take: Take }) {
   const [text, setText] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const busy = sc.status === "generating";
-  const est = videoUsd(act.settings, take.duration_s ?? sc.duration_s, take.resolution);
+  // an edit goes to the model that made the take, at that take's resolution
+  const est = videoUsd(act.settings, take.duration_s ?? sc.duration_s, take.resolution, take.provider, true);
 
   const send = async () => {
     if (!text.trim() || busy || sending) return;
@@ -351,5 +356,43 @@ function FixComposer({ p, sc, take }: { p: Project; sc: Scene; take: Take }) {
         Edits {take.name.replace(".mp4", "").replace("_", " ")} and keeps everything else · ≈{usd(est)} · the original stays as a take
       </p>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- model choice
+
+/** Short name for a provider: "Gemini", "Kling". */
+function shortLabel(id: string) {
+  return id === "gemini-omni" ? "Gemini" : id.charAt(0).toUpperCase() + id.slice(1);
+}
+
+/** Which video model shoots this scene. The settings default unless the scene picks another. */
+function ModelPicker({ p, sc }: { p: Project; sc: Scene }) {
+  const act = useProjectActions(p);
+  const s = act.settings;
+  const list = s?.providers ?? [];
+  if (list.length < 2) return null;
+  const busy = sc.status === "generating";
+  const info = providerInfo(s, sc.provider);
+  const mapped = s && sc.render.resolution !== s.resolution;
+  return (
+    <span className="flex items-center gap-1.5">
+      <Segmented
+        size="sm"
+        value={sc.provider}
+        onChange={(v) => act.setSceneProvider(sc.id, v === s?.video_provider ? null : v)}
+        options={list.map((pr) => ({
+          value: pr.id,
+          label: shortLabel(pr.id),
+          disabled: busy || !pr.configured,
+          title: pr.configured ? `${pr.label} (${pr.model})` : `${pr.label}: ${pr.setup}`,
+        }))}
+      />
+      {mapped && info && (
+        <Tip content={`${info.label} doesn't offer ${s?.resolution}; it shoots at ${sc.render.resolution}`}>
+          <Badge tone="outline" className="tabular">{sc.render.resolution}</Badge>
+        </Tip>
+      )}
+    </span>
   );
 }

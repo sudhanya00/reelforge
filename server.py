@@ -321,7 +321,7 @@ def project_view(proj: pl.Project) -> dict:
             "prompt": prompt, "default_prompt": default_prompt,
             "overridden": pkey in overrides, "refs_used": refs_used,
             "provider": vp.id, "provider_chosen": sc["id"] in plan.get("video_providers", {}),
-            "shot": {"resolution": shot.resolution, "duration_s": shot.duration_s},
+            "render": {"resolution": shot.resolution, "duration_s": shot.duration_s},
             "refs_missing": [r for r in sc["refs"] if r in idx and r not in refs_used],
             "takes": [take_view(proj, t) for t in takes],
             "selected": sel.name if sel else None,

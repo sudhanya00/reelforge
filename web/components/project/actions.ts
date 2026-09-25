@@ -35,8 +35,10 @@ export function useProjectActions(p: Project | undefined) {
     };
     const missingRefs = p?.assets.filter((a) => !a.image && a.status !== "generating") ?? [];
     const missingScenes = p?.scenes.filter((sc) => !sc.takes.length && sc.status !== "generating") ?? [];
+    // each scene at its own model's price and length
     const remainingUsd =
-      imageUsd(s, missingRefs.length) + videoUsd(s, missingScenes.reduce((t, sc) => t + sc.duration_s, 0));
+      imageUsd(s, missingRefs.length) +
+      missingScenes.reduce((t, sc) => t + videoUsd(s, sc.render.duration_s, null, sc.provider), 0);
 
     return {
       settings: s,
@@ -52,7 +54,7 @@ export function useProjectActions(p: Project | undefined) {
       paint: (assetId: string) => run(`Couldn't repaint ${assetId}`, () => api.makeAssets(id, [assetId], true)),
       shoot: async (sceneId: string) => {
         const sc = p?.scenes.find((x) => x.id === sceneId);
-        const cost = videoUsd(s, sc?.duration_s ?? 8);
+        const cost = videoUsd(s, sc?.render.duration_s ?? 8, null, sc?.provider);
         if (!(await confirm({ title: `Shoot ${sceneId}?`, usd: cost, action: "Shoot" }))) return;
         return run(`Couldn't shoot ${sceneId}`, () => api.shoot(id, sceneId));
       },
@@ -64,7 +66,10 @@ export function useProjectActions(p: Project | undefined) {
       },
       stitch: () => run("Couldn't stitch", () => api.stitch(id)),
       select: (sceneId: string, take: string) => run("Couldn't select take", () => api.select(id, sceneId, take)),
-      setPrompt: (item: string, prompt: string | null) => run("Couldn't save the prompt", () => api.setPrompt(id, item, prompt)),
+      setPrompt: (item: string, prompt: string | null, provider?: string) =>
+        run("Couldn't save the prompt", () => api.setPrompt(id, item, prompt, provider)),
+      setSceneProvider: (sceneId: string, provider: string | null) =>
+        run("Couldn't change the model", () => api.setSceneProvider(id, sceneId, provider)),
       savePlan: (plan: Plan) => run("Couldn't save the plan", () => api.savePlan(id, plan)),
       reveal: () => run("Couldn't open the folder", () => api.reveal(id)),
     };

@@ -26,6 +26,20 @@ then run `gcloud auth application-default login` once. Or use an AI Studio key:
 app's Settings (saved to `reelforge.settings.json`). On Vertex, 1080p/4k needs a Cloud
 Storage bucket, which isn't wired up yet; 360p/720p work.
 
+## Video models
+Every scene can be shot by a different model (Scenes tab, per-scene picker; the default is in
+Settings). Each model is a provider in `providers/` talking to that company's own API:
+
+| Provider | Model | Setup |
+|---|---|---|
+| Gemini Omni Flash | `gemini-omni-1.1-flash(-preview)` | the Google credentials above |
+| Kling 3.0 Omni | `kling-3.0-omni` | `KLING_API_KEY=...` in `.env` (Kling console → API Keys) |
+
+Kling shoots 3-15 s clips at 720p and up (360p requests are shot at 720p), and can only edit
+takes it made in the last 30 days. Edits always go to the model that made the take. To add a
+model, write a `VideoProvider` (prompt syntax, submit, collect, price) and register it in
+`providers/__init__.py`.
+
 ## Workflow
 1. **Plan**: describe the story; review and edit the plan before anything costly runs.
 2. **References**: paint the cast, props and locations; repaint or edit prompts until right.
