@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 import pipeline as pl
-from fakes import HAS_FFMPEG, PLAN, FakeClient, log_entries
+from fakes import HAS_FFMPEG, PLAN, FakeClient, api_error, interactions_error, log_entries
 
 
 # ---------------------------------------------------------------- settings / costs
@@ -153,3 +153,56 @@ def test_stitch(proj, client, s):
         pl.generate_take(client, s, proj, sc)
     out = pl.stitch(proj)
     assert pl.video_duration(out) == pytest.approx(6.0, abs=0.2)
+
+
+# ---------------------------------------------------------------- retries / errors
+
+@pytest.fixture
+def fast(s):
+    s.retry_base_s = 0
+    return s
+
+
+def test_image_retries_on_503_then_succeeds(proj, client, fast):
+    client.errors = [api_error(503)]
+    pl.generate_assets(client, fast, proj, only=["char_a"])
+    assert proj.asset_path("char_a").exists()
+    retry = [e for e in log_entries(proj) if e["kind"] == "retry"]
+    assert retry and retry[0]["status"] == 503
+
+
+def test_video_retries_on_429_from_interactions(proj, client, fast):
+    client.errors = [interactions_error(429), interactions_error(429)]
+    out = pl.generate_take(client, fast, proj, "s01")
+    assert out.exists()
+    assert len([e for e in log_entries(proj) if e["kind"] == "retry"]) == 2
+
+
+def test_client_errors_are_not_retried(proj, client, fast):
+    client.errors = [interactions_error(400, "bad request")]
+    with pytest.raises(Exception):
+        pl.generate_take(client, fast, proj, "s01")
+    assert len([c for c in client.calls if c[0] == "interactions.create"]) == 1
+
+
+def test_gives_up_after_max_retries(proj, client, fast):
+    client.errors = [api_error(503)] * (fast.max_retries + 1)
+    with pytest.raises(Exception) as ei:
+        pl.generate_assets(client, fast, proj, only=["char_a"])
+    assert "servers failed" in pl.friendly_error(ei.value)
+
+
+@pytest.mark.parametrize("err, expect", [
+    (api_error(402), "prepaid credits"),
+    (api_error(404, "no such model"), "Check the model ids"),
+    (interactions_error(403, "denied"), "Vertex AI API is enabled"),
+    (interactions_error(429), "Rate limit"),
+    (api_error(400, "blocked"), "safety filter"),
+])
+def test_friendly_error_messages(err, expect):
+    assert expect in pl.friendly_error(err)
+
+
+def test_friendly_error_for_expired_credentials():
+    import google.auth.exceptions as gae
+    assert "application-default login" in pl.friendly_error(gae.RefreshError("expired"))

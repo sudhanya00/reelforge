@@ -26,9 +26,12 @@ from pathlib import Path
 from typing import ClassVar
 
 import google.auth
+import google.auth.exceptions
 from dotenv import load_dotenv
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
+from google.genai._gaos.errors import GenAiError   # raised by client.interactions.*
 
 # GEMINI_API_KEY etc. from a .env next to this file; real env vars take precedence
 load_dotenv(Path(__file__).with_name(".env"))
@@ -77,6 +80,8 @@ class Settings:
     resolution: str = "720p"                             # 360p | 720p | 1080p | 4k
     image_size: str = "2K"                               # 1K | 2K | 4K
     video_timeout_s: int = 900
+    max_retries: int = 3                                 # on 429 / 5xx only
+    retry_base_s: float = 10.0                           # waits 10s, 30s, 90s
     # "gemini" = AI Studio key (GEMINI_API_KEY); "vertex" = bills a GCP project,
     # so GCP credits apply. Defaults come from the standard google-genai env vars.
     backend: str = field(default_factory=lambda: "vertex" if _env_bool("GOOGLE_GENAI_USE_VERTEXAI") else "gemini")
@@ -172,6 +177,57 @@ def project_costs(proj: "Project") -> dict:
             tot["usd"] += e["cost_usd"]
     tot["usd"] = round(tot["usd"], 2)
     return tot
+
+
+def _http_status(e: Exception) -> int | None:
+    if isinstance(e, genai_errors.APIError):          # models.* calls
+        return e.code
+    if isinstance(e, GenAiError):                     # interactions.* calls
+        return e.status_code
+    return None
+
+
+# The server rejected these before generating anything, so retrying never pays twice.
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+def _with_retry(fn, s: "Settings", what: str, proj: "Project | None" = None):
+    """Call fn(), retrying rate limits / overloads with exponential backoff."""
+    for attempt in range(s.max_retries + 1):
+        try:
+            return fn()
+        except Exception as e:
+            status = _http_status(e)
+            if status not in RETRYABLE_STATUS or attempt == s.max_retries:
+                raise
+            wait = s.retry_base_s * 3 ** attempt
+            if proj:
+                proj.log(kind="retry", what=what, status=status, attempt=attempt + 1, wait_s=wait)
+            time.sleep(wait)
+
+
+def friendly_error(e: Exception) -> str:
+    """One-line explanation of a failure, with what to do about it."""
+    status = _http_status(e)
+    msg = (getattr(e, "message", None) or str(e)).strip()[:300]
+    if isinstance(e, google.auth.exceptions.GoogleAuthError):
+        return ("Google Cloud credentials are missing or expired. "
+                "Run: gcloud auth application-default login")
+    if status == 402:
+        return ("Billing: this API key's prepaid credits are used up. Top up in AI Studio, "
+                "or switch the backend to vertex.")
+    if status in (401, 403):
+        return (f"Permission denied: {msg} On Vertex, check that the Vertex AI API is enabled "
+                "on the project and your account can use it.")
+    if status == 404:
+        return f"Model or resource not found: {msg} Check the model ids in Settings for this backend."
+    if status == 429:
+        return "Rate limit or quota exceeded, even after retries. Wait a few minutes and resume."
+    if status == 400:
+        return f"The request was rejected (often a safety filter or a bad parameter): {msg}"
+    if status and status >= 500:
+        return f"Google's servers failed (HTTP {status}) even after retries. Try again shortly."
+    return f"{type(e).__name__}: {msg}"
 
 
 def format_costs(c: dict) -> str:
@@ -330,7 +386,7 @@ def plan_story(client: genai.Client, s: Settings, story: str, style: str,
         f"ORIENTATION: {s.orientation}\n"
         f"TARGET SCENE COUNT: about {n_scenes}\n"
     )
-    resp = client.models.generate_content(
+    resp = _with_retry(lambda: client.models.generate_content(
         model=s.planner_model,
         contents=prompt,
         config=types.GenerateContentConfig(
@@ -339,7 +395,7 @@ def plan_story(client: genai.Client, s: Settings, story: str, style: str,
             response_json_schema=PLAN_SCHEMA,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         ),
-    )
+    ), s, "plan")
     plan = json.loads(resp.text)
     plan["orientation"] = s.orientation
     return plan, _usage_gc(resp)
@@ -475,10 +531,11 @@ def _img_part(path: Path) -> types.Part:
 
 
 def generate_image(client: genai.Client, s: Settings, prompt: str, out: Path,
-                   refs: list[Path] | None = None, aspect: str | None = None) -> dict:
+                   refs: list[Path] | None = None, aspect: str | None = None,
+                   proj: Project | None = None) -> dict:
     """Writes the image to `out` (always PNG) and returns the call's usage."""
     contents = [_img_part(p) for p in (refs or [])] + [prompt]
-    resp = client.models.generate_content(
+    resp = _with_retry(lambda: client.models.generate_content(
         model=s.image_model,
         contents=contents,
         config=types.GenerateContentConfig(
@@ -487,7 +544,7 @@ def generate_image(client: genai.Client, s: Settings, prompt: str, out: Path,
                                            image_size=s.image_size),
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         ),
-    )
+    ), s, f"image {out.stem}", proj)
     for part in (resp.candidates[0].content.parts if resp.candidates and resp.candidates[0].content else []):
         if part.inline_data and part.inline_data.data:
             data = part.inline_data.data
@@ -536,7 +593,8 @@ def generate_assets(client, s: Settings, proj: Project, only: list[str] | None =
         if skip_existing and out.exists() and not only:
             return job["id"], "skipped"
         refs = [proj.asset_path(job["base"])] if job["base"] else None
-        usage = generate_image(client, s, job["prompt"], out, refs=refs, aspect=job["aspect"])
+        usage = generate_image(client, s, job["prompt"], out, refs=refs, aspect=job["aspect"],
+                               proj=proj)
         proj.log(kind="image", id=job["id"], model=s.image_model, prompt=job["prompt"],
                  refs=[job["base"]] if job["base"] else [], image_size=s.image_size,
                  aspect=job["aspect"], usage=usage,
@@ -688,8 +746,9 @@ def generate_take(client, s: Settings, proj: Project, scene_id: str) -> Path:
                                       "which isn't wired up yet. Use 720p or lower.")
         fmt["delivery"] = "uri"
 
-    interaction = client.interactions.create(
-        model=s.video_model, input=parts, response_format=fmt, timeout=s.video_timeout_s)
+    interaction = _with_retry(lambda: client.interactions.create(
+        model=s.video_model, input=parts, response_format=fmt, timeout=s.video_timeout_s),
+        s, f"video {scene_id}", proj)
     # record the id before anything else can fail, so a paid clip is always recoverable
     proj.log(kind="video_submitted", scene=scene_id, interaction_id=interaction.id,
              status=interaction.status)
@@ -708,9 +767,10 @@ def edit_take(client, s: Settings, proj: Project, scene_id: str, take: Path,
             text += "."
         text += " Keep everything else the same."
     # same format as the source take, so the edit comes back as video at its res/aspect
-    interaction = client.interactions.create(
+    interaction = _with_retry(lambda: client.interactions.create(
         model=s.video_model, previous_interaction_id=meta["interaction_id"],
-        input=text, response_format=meta["format"], timeout=s.video_timeout_s)
+        input=text, response_format=meta["format"], timeout=s.video_timeout_s),
+        s, f"edit {scene_id}", proj)
     proj.log(kind="video_submitted", scene=scene_id, interaction_id=interaction.id,
              status=interaction.status, edited_from=take.name)
     base = {k: v for k, v in meta.items() if k not in ("usage", "cost_usd", "duration_s")}
