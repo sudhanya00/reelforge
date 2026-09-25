@@ -52,6 +52,7 @@ export interface AppState {
   styles: { id: string; label: string; pacing: Pacing }[];
   pacing: { id: Pacing; label: string; brief: string }[];
   planner_version: string;
+  stale: boolean;
 }
 
 export type Pacing = "calm" | "balanced" | "kinetic";

@@ -266,14 +266,15 @@ function SetupWarnings() {
   const { data } = useAppState();
   if (!data) return null;
   const notes: React.ReactNode[] = [];
+  if (data.stale) notes.push(<>ReelForge was updated while it was running. Restart it (close its window and run ReelForge.bat) to use the new version.</>);
   if (data.fake) notes.push(<>Demo mode · a fake model is used and nothing is billed</>);
   if (!data.ffmpeg) notes.push(<>ffmpeg wasn&apos;t found, so continuous scenes, posters and stitching won&apos;t work. Install it and relaunch.</>);
   if (!notes.length) return null;
   return (
-    <div className={cn("border-b text-center text-xs", data.fake && data.ffmpeg ? "bg-muted/60 text-muted-foreground" : "bg-live/10 text-foreground")}>
+    <div className={cn("border-b text-center text-xs", data.fake && data.ffmpeg && !data.stale ? "bg-muted/60 text-muted-foreground" : "bg-live/10 text-foreground")}>
       {notes.map((n, i) => (
         <div key={i} className="flex items-center justify-center gap-1.5 py-1.5">
-          {!data.fake || !data.ffmpeg ? <TriangleAlert className="size-3.5 text-live" /> : null}
+          {!data.fake || !data.ffmpeg || data.stale ? <TriangleAlert className="size-3.5 text-live" /> : null}
           {n}
         </div>
       ))}

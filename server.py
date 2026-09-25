@@ -23,6 +23,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import hashlib
+
 import director
 import influencers as infl
 import library as lib
@@ -108,6 +110,17 @@ def settings_view(s: pl.Settings) -> dict:
 
 _clients: dict[tuple, object] = {}
 _clients_lock = threading.Lock()
+
+
+def code_version() -> str:
+    """Hash of the app's Python code. If it changes while the server runs, the server is stale."""
+    h = hashlib.sha1()
+    for f in sorted([*ROOT.glob("*.py"), *(ROOT / "providers").glob("*.py")]):
+        h.update(f.name.encode() + f.read_bytes())
+    return h.hexdigest()[:12]
+
+
+STARTED_VERSION = code_version()
 
 
 def client_for(s: pl.Settings):
@@ -420,7 +433,8 @@ def get_state():
             "fake": CONFIG["fake"], "projects_dir": str(projects_dir()), "typical_s": typical_s(),
             "styles": [{"id": k, "label": v["label"], "pacing": v["pacing"]} for k, v in styles.STYLE_PRESETS.items()],
             "pacing": [{"id": k, "label": v["label"], "brief": styles.pacing_brief(k)} for k, v in styles.PACING.items()],
-            "planner_version": s.planner_version}
+            "planner_version": s.planner_version,
+            "stale": code_version() != STARTED_VERSION}
 
 
 class SettingsIn(BaseModel):
@@ -1295,6 +1309,13 @@ class _LibraryFiles(StaticFiles):
 
 
 app.mount("/library-files", _LibraryFiles(), name="library-files")
+
+
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+def unknown_api(path: str):
+    """Registered last: an API call this server doesn't know, e.g. from a newer UI."""
+    raise HTTPException(404, f"This ReelForge server doesn't know /api/{path}. If ReelForge was just "
+                             "updated, restart it (close its window and run ReelForge.bat again).")
 
 
 def mount_web() -> None:

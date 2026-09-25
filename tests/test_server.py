@@ -55,6 +55,14 @@ def test_state_and_settings_roundtrip(api):
     assert api.post("/api/settings/check").json()["ok"] is True
 
 
+def test_unknown_api_and_stale_code(api, monkeypatch):
+    r = api.post("/api/nope")
+    assert r.status_code == 404 and "restart it" in r.json()["detail"]
+    assert api.get("/api/state").json()["stale"] is False
+    monkeypatch.setattr(server, "STARTED_VERSION", "older")
+    assert api.get("/api/state").json()["stale"] is True
+
+
 def test_new_film_plan_only(api, pid):
     v = api.get(f"/api/projects/{pid}").json()
     assert v["plan"]["title"] == "Test Film" and v["orientation"] == "16:9"
