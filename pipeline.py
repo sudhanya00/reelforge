@@ -67,10 +67,10 @@ class Project:
         return self.root / "plan.json"
 
     def load_plan(self) -> dict:
-        return json.loads(self.plan_path.read_text())
+        return json.loads(self.plan_path.read_text(encoding="utf-8"))
 
     def save_plan(self, plan: dict) -> None:
-        self.plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False))
+        self.plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # paths
     def asset_path(self, asset_id: str) -> Path:
@@ -90,7 +90,7 @@ class Project:
     # log
     def log(self, **entry) -> None:
         entry["ts"] = datetime.now().isoformat(timespec="seconds")
-        with open(self.root / "log.jsonl", "a") as f:
+        with open(self.root / "log.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
@@ -472,7 +472,7 @@ def generate_take(client, s: Settings, proj: Project, scene_id: str) -> Path:
 
     meta = {"scene": scene_id, "take": out.name, "interaction_id": interaction.id,
             "prompt": prompt, "refs": ref_ids, "model": s.video_model, "format": fmt}
-    out.with_suffix(".json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    out.with_suffix(".json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     proj.log(kind="video", **meta)
     return out
 
@@ -480,7 +480,7 @@ def generate_take(client, s: Settings, proj: Project, scene_id: str) -> Path:
 def edit_take(client, s: Settings, proj: Project, scene_id: str, take: Path,
               instruction: str) -> Path:
     """Conversational edit on an existing take; keeps everything else the same."""
-    meta = json.loads(take.with_suffix(".json").read_text())
+    meta = json.loads(take.with_suffix(".json").read_text(encoding="utf-8"))
     text = instruction.strip()
     if "keep everything else" not in text.lower():
         text += " Keep everything else the same."
@@ -491,7 +491,7 @@ def edit_take(client, s: Settings, proj: Project, scene_id: str, take: Path,
     _save_video(client, interaction, out)
     new_meta = {**meta, "take": out.name, "interaction_id": interaction.id,
                 "edited_from": take.name, "edit": text}
-    out.with_suffix(".json").write_text(json.dumps(new_meta, indent=2, ensure_ascii=False))
+    out.with_suffix(".json").write_text(json.dumps(new_meta, indent=2, ensure_ascii=False), encoding="utf-8")
     proj.log(kind="video_edit", **new_meta)
     return out
 
@@ -509,7 +509,9 @@ def stitch(proj: Project) -> Path:
     if not clips:
         raise RuntimeError("No clips to stitch yet.")
     lst = proj.root / "concat.txt"
-    lst.write_text("".join(f"file '{c.resolve()}'\n" for c in clips))
+    # forward slashes + ffmpeg's quote escaping so Windows paths / apostrophes are safe
+    esc = lambda p: p.resolve().as_posix().replace("'", "'\\''")
+    lst.write_text("".join(f"file '{esc(c)}'\n" for c in clips), encoding="utf-8")
     out = proj.root / "final.mp4"
     # re-encode so clips with slightly different params still join cleanly
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
