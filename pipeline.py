@@ -43,13 +43,14 @@ def _env_bool(name: str) -> bool:
 @dataclass
 class Settings:
     # Default model ids per backend (the same model can have a different id on each).
-    # Checked against models.get on 2026-09-25.
+    # Vertex ids checked against models.list(query_base=True) on 2026-09-25; models.get
+    # also "finds" catalog-only ids that 404 when called, so don't trust it for this.
     MODELS: ClassVar[dict[str, dict[str, str]]] = {
         "gemini": {"planner_model": "gemini-3.1-pro-preview",
                    "image_model": "gemini-3-pro-image-preview",      # Nano Banana Pro
                    "video_model": "gemini-omni-1.1-flash"},
         "vertex": {"planner_model": "gemini-3.1-pro-preview",
-                   "image_model": "gemini-3-pro-image-preview",
+                   "image_model": "gemini-3-pro-image",              # GA id on Vertex
                    "video_model": "gemini-omni-1.1-flash-preview"},
     }
     planner_model: str = ""                              # "" = backend default
@@ -432,6 +433,18 @@ def _b64(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode()
 
 
+def _await_interaction(client, interaction, timeout_s: int):
+    """create() normally returns a finished interaction, but may hand back a queued one."""
+    deadline = time.time() + timeout_s
+    while interaction.status in ("queued", "in_progress"):
+        if time.time() > deadline:
+            raise TimeoutError(f"Interaction {interaction.id} still {interaction.status} "
+                               f"after {timeout_s}s; fetch it later with interactions.get")
+        time.sleep(5)
+        interaction = client.interactions.get(interaction.id)
+    return interaction
+
+
 def _save_video(client, interaction, out: Path) -> None:
     vid = interaction.output_video
     if vid is None:
@@ -440,6 +453,9 @@ def _save_video(client, interaction, out: Path) -> None:
     if getattr(vid, "data", None):
         out.write_bytes(base64.b64decode(vid.data))
         return
+    if (vid.uri or "").startswith("gs://"):
+        raise NotImplementedError(f"Video was delivered to Cloud Storage ({vid.uri}); "
+                                  "GCS download isn't implemented yet. Use 360p/720p on Vertex.")
     m = re.search(r"files/([A-Za-z0-9_-]+)", vid.uri or "")
     if not m:
         raise RuntimeError("Video returned without data or a usable uri")
@@ -511,6 +527,10 @@ def generate_take(client, s: Settings, proj: Project, scene_id: str) -> Path:
 
     interaction = client.interactions.create(
         model=s.video_model, input=parts, response_format=fmt, timeout=s.video_timeout_s)
+    # record the id before anything else can fail, so a paid clip is always recoverable
+    proj.log(kind="video_submitted", scene=scene_id, interaction_id=interaction.id,
+             status=interaction.status)
+    interaction = _await_interaction(client, interaction, s.video_timeout_s)
     out = proj.next_take_path(scene_id)
     _save_video(client, interaction, out)
 
@@ -531,6 +551,9 @@ def edit_take(client, s: Settings, proj: Project, scene_id: str, take: Path,
     interaction = client.interactions.create(
         model=s.video_model, previous_interaction_id=meta["interaction_id"],
         input=text, timeout=s.video_timeout_s)
+    proj.log(kind="video_submitted", scene=scene_id, interaction_id=interaction.id,
+             status=interaction.status, edited_from=take.name)
+    interaction = _await_interaction(client, interaction, s.video_timeout_s)
     out = proj.next_take_path(scene_id)
     _save_video(client, interaction, out)
     new_meta = {**meta, "take": out.name, "interaction_id": interaction.id,
