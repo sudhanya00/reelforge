@@ -1,0 +1,373 @@
+[
+ {
+  "version": "v1",
+  "scene": "s01",
+  "take": "take_01.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.2202,
+  "verdict": "reshoot",
+  "overall": 4.1,
+  "scores": {
+   "identity": 4,
+   "costume": 5,
+   "environment": 5,
+   "action": 4,
+   "camera": 4,
+   "pacing": 5,
+   "physics": 1,
+   "artifacts": 3,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[3.0-6.02s] fatal physics: The water splashing from the front tire forms a rigid, static V-shape that glides over the water without dynamic fluid interaction.",
+   "[0.0-6.02s] major physics: The front wheel of the scooter slides forward over the water without visibly rotating.",
+   "[3.5-6.02s] minor artifacts: The logo/text on the front shield of the scooter morphs and warps as it approaches."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s01",
+  "take": "take_02.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.2196,
+  "verdict": "reshoot",
+  "overall": 3.5,
+  "scores": {
+   "identity": 4,
+   "costume": 3,
+   "environment": 5,
+   "action": 3,
+   "camera": 5,
+   "pacing": 4,
+   "physics": 1,
+   "artifacts": 2,
+   "style": 3,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-6.0s] fatal physics: The scooter and rider glide forward completely rigidly, lacking wheel rotation, suspension bounce, or natural body movement.",
+   "[1.5-6.0s] fatal physics: The water splashing from the tires forms as a solid, static 3D mesh that simply translates forward with the scooter instead of behaving like a dynamic fluid.",
+   "[0.0-6.0s] major costume: The scooter's headlight is misplaced on the front leg shield rather than the handlebars as shown in the prop reference.",
+   "[0.0-6.0s] major style: The completely stiff motion directly violates the 'avoid 3D render look' instruction."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s02",
+  "take": "take_01.mp4",
+  "planned_s": 8,
+  "clip_s": 8.0,
+  "cost": 0.2882,
+  "verdict": "reshoot",
+  "overall": 4.2,
+  "scores": {
+   "identity": 5,
+   "costume": 5,
+   "environment": 5,
+   "action": 2,
+   "camera": 5,
+   "pacing": 2,
+   "physics": 4,
+   "artifacts": 4,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 3.5,
+  "cuts": [],
+  "issues": [
+   "[4.5-8.0s] major action: The postman looks at the courier but fails to perform the requested slow nod.",
+   "[4.5-8.0s] major pacing: The shot stalls as the character freezes in a stare for the final three and a half seconds."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s02",
+  "take": "take_02.mp4",
+  "planned_s": 8,
+  "clip_s": 8.0,
+  "cost": 0.2885,
+  "verdict": "keep",
+  "overall": 4.8,
+  "scores": {
+   "identity": 5,
+   "costume": 5,
+   "environment": 5,
+   "action": 5,
+   "camera": 5,
+   "pacing": 4,
+   "physics": 5,
+   "artifacts": 4,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-5.0s] minor pacing: The postman looks at the letter for a full 5 seconds, which feels slightly stalled for an 8-second shot.",
+   "[0.0-8.0s] minor artifacts: The text on the letter is slightly garbled."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s03",
+  "take": "take_01.mp4",
+  "planned_s": 7,
+  "clip_s": 7.02,
+  "cost": 0.2532,
+  "verdict": "reshoot",
+  "overall": 4.3,
+  "scores": {
+   "identity": 5,
+   "costume": 5,
+   "environment": 5,
+   "action": 3,
+   "camera": 5,
+   "pacing": 3,
+   "physics": 5,
+   "artifacts": 3,
+   "style": 4,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 3.5,
+  "cuts": [],
+  "issues": [
+   "[0.0-4.5s] major action: The character stares statically at the page instead of his eyes scanning the words as briefed.",
+   "[0.0-4.0s] minor pacing: The lack of reading motion creates a stalled, frozen feeling for the first half of the shot.",
+   "[0.0-7.02s] minor style: Missing the explicitly requested 'rain droplets on lens' effect.",
+   "[0.0-3.5s] minor artifacts: The text on the letter is garbled AI gibberish.",
+   "[4.5-6.5s] minor artifacts: The skin wrinkles and texture on the cheeks morph and slide unnaturally as the character smiles."
+  ]
+ },
+ {
+  "version": "v1",
+  "scene": "s03",
+  "take": "take_02.mp4",
+  "planned_s": 7,
+  "clip_s": 7.02,
+  "cost": 0.2537,
+  "verdict": "keep",
+  "overall": 4.8,
+  "scores": {
+   "identity": 5,
+   "costume": 5,
+   "environment": 5,
+   "action": 5,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 5,
+   "artifacts": 4,
+   "style": 4,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-7.02s] minor artifacts: The handwritten text on the letter consists of garbled AI squiggles.",
+   "[0.0-7.02s] minor style: Missing the requested rain droplets on the camera lens."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s01",
+  "take": "take_01.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.2175,
+  "verdict": "reshoot",
+  "overall": 3.7,
+  "scores": {
+   "identity": 4,
+   "costume": 3,
+   "environment": 5,
+   "action": 4,
+   "camera": 3,
+   "pacing": 5,
+   "physics": 2,
+   "artifacts": 2,
+   "style": 4,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [
+   3.0
+  ],
+  "issues": [
+   "[0.0-3.0s] major physics: The scooter's wheels do not interact with the water; the splash is a frozen, static V-shape that moves rigidly with the scooter.",
+   "[3.0-3.0s] fatal artifacts: Severe lack of consistency across the cut: the helmet suddenly gains a visor, and the scooter's badge and text completely change.",
+   "[3.0-6.02s] major camera: The framing is a medium shot showing the torso and handlebars, ignoring the brief's request for a tight close-up tracking the face."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s01",
+  "take": "take_02.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.2196,
+  "verdict": "reshoot",
+  "overall": 3.6,
+  "scores": {
+   "identity": 4,
+   "costume": 3,
+   "environment": 5,
+   "action": 3,
+   "camera": 5,
+   "pacing": 4,
+   "physics": 1,
+   "artifacts": 3,
+   "style": 4,
+   "continuity": 4
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [
+   3.0
+  ],
+  "issues": [
+   "[0.0-3.0s] fatal physics: The water splash in front of the scooter is completely frozen and glides rigidly as a solid object.",
+   "[0.0-3.0s] minor costume: The scooter features side mirrors that are not present in the prop reference.",
+   "[3.0-5.75s] minor costume: A white text logo appears on the helmet's visor rim in the close-up."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s02",
+  "take": "take_01.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.2205,
+  "verdict": "reshoot",
+  "overall": 3.3,
+  "scores": {
+   "identity": 3,
+   "costume": 2,
+   "environment": 4,
+   "action": 2,
+   "camera": 5,
+   "pacing": 4,
+   "physics": 2,
+   "artifacts": 2,
+   "style": 4,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [
+   3.0
+  ],
+  "issues": [
+   "[0.0-3.0s] major costume: The courier's helmet is silver and lacks a visor, contradicting the character reference.",
+   "[0.0-3.0s] major action: The courier walks out of the doorway into the rain, reversing the expected staging of a delivery.",
+   "[0.0-3.0s] major physics: The letter appears as a stiff, flat grey rectangle instead of a damp crumpled envelope.",
+   "[3.0-6.02s] fatal artifacts: Both the postman's and the courier's thumbs morph and merge into the paper envelope.",
+   "[3.0-6.02s] major action: The courier never releases the letter; they simply hold it together with the postman.",
+   "[3.0-6.02s] minor artifacts: The handwriting on the envelope consists of garbled, illegible scribbles."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s02",
+  "take": "take_02.mp4",
+  "planned_s": 6,
+  "clip_s": 6.02,
+  "cost": 0.2223,
+  "verdict": "reshoot",
+  "overall": 3.7,
+  "scores": {
+   "identity": 4,
+   "costume": 2,
+   "environment": 5,
+   "action": 4,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 2,
+   "artifacts": 1,
+   "style": 4,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [
+   3.0
+  ],
+  "issues": [
+   "[0.0-0.5s] major physics: The letter fades into existence in the courier's hand as she walks.",
+   "[0.0-2.75s] major costume: The courier's helmet is a silver dome rather than a black modern helmet with a visor.",
+   "[0.0-5.75s] major costume: The courier is wearing black gloves which are not in the character reference.",
+   "[3.0-5.75s] minor artifacts: The handwriting on the envelope is nonsensical and shifts slightly.",
+   "[3.5-5.0s] fatal artifacts: The postman's hand has extra, mangled fingers that morph seamlessly into the paper of the envelope."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s03",
+  "take": "take_01.mp4",
+  "planned_s": 7,
+  "clip_s": 7.02,
+  "cost": 0.2526,
+  "verdict": "reshoot",
+  "overall": 4.4,
+  "scores": {
+   "identity": 4,
+   "costume": 2,
+   "environment": 5,
+   "action": 5,
+   "camera": 4,
+   "pacing": 5,
+   "physics": 5,
+   "artifacts": 4,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[0.0-7.02s] major costume: The character is wearing a lace-up tunic instead of a plain one, and is missing the glasses on his collar.",
+   "[0.0-3.0s] minor camera: The camera slowly drifts forward from the start instead of remaining completely stationary before the main push-in."
+  ]
+ },
+ {
+  "version": "v2",
+  "scene": "s03",
+  "take": "take_02.mp4",
+  "planned_s": 7,
+  "clip_s": 7.02,
+  "cost": 0.2504,
+  "verdict": "reshoot",
+  "overall": 3.8,
+  "scores": {
+   "identity": 5,
+   "costume": 5,
+   "environment": 5,
+   "action": 4,
+   "camera": 1,
+   "pacing": 3,
+   "physics": 4,
+   "artifacts": 1,
+   "style": 5,
+   "continuity": 5
+  },
+  "dead_meter": 0,
+  "dead_review": 0.0,
+  "cuts": [],
+  "issues": [
+   "[4.5-5.0s] fatal camera: The camera cross-dissolves to a tight close-up instead of performing a continuous, motivated push-in.",
+   "[4.5-5.0s] fatal artifacts: Severe ghosting and overlapping faces due to the unrequested crossfade transition."
+  ]
+ }
+]

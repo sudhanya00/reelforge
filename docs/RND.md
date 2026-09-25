@@ -107,3 +107,46 @@ Next changes to test:
    format or lens hardware ("35mm", "anamorphic") in prompts.
 3. Next round with a fresh v2 plan (not a conversion), including static close-ups, and the
    same scenes on Kling once a key is set up.
+
+## A/B round 2: fresh v1 plan vs fresh v2 plan (2026-09-25)
+
+Setup: one story (monsoon courier delivers a letter; the old postman reads it and smiles) planned
+from scratch by each planner, each with its own references, 9:16, Gemini Omni at 360p, scenes
+s01 (scooter in flood), s02 (letter handed over), s03 (reading close-up), 2 takes each, all
+reviewed. Director changes from round 1 were in. Spend $5.71 (refs $1.94, video $2.91, planning
+$0.20, reviews $0.66). Estimate was $4.60: two full reference sets cost more than assumed.
+
+| | v1 | v2 |
+|---|---|---|
+| Mean overall (1-5) | **4.28** | 3.75 |
+| Keep / fix / reshoot | **2** / 0 / 4 | 0 / 0 / 6 |
+| Costume | **4.67** | 2.83 |
+| Artifacts | **3.33** | 2.17 |
+| Physics | **3.50** | 2.67 |
+| Camera | **4.83** | 3.83 |
+| Pacing | 3.83 | **4.33** |
+
+Across both rounds (12 takes each): v1 4.07, v2 3.98. A tie on averages; the mechanisms matter more:
+
+1. **In-clip cuts hurt consistency on Omni.** Both v2 multi-shot scenes drifted at the cut: the
+   helmet gained a visor, the scooter badge changed, the helmet turned into a silver dome, gloves
+   appeared. Costume fell from 4.67 to 2.83. Coverage should come from separate scenes for now.
+2. **A precise close-up hand-off still fails.** v2 kept the handover (the story needs it) and
+   described it exactly: in both takes the fingers merged into the envelope. v1 had the postman
+   already holding the letter and got a keep. Lesson: some actions should be implied through the
+   edit (courier offers it / next shot he's holding it). That keeps the story and drops the risk.
+3. **A big push-in to a tight close-up can come out as a cross-dissolve** (v2 s03 take 2: ghosted
+   faces). One observation; watch for it.
+4. **v2's beats did reduce stalling**: pacing 4.33 vs 3.83. v1's postman froze in a stare for
+   3.5 s, and v1's reader stared without reading.
+5. **Model limits in both arms**: water spray renders as a rigid V that slides with the scooter,
+   wheels don't turn, handwriting is gibberish, small costume details drift. Motion cues in the
+   prompt didn't fix gliding.
+6. **Meter blind spot**: 0 s dead time everywhere, yet the reviewer found stalls. Rain and grain
+   keep pixels moving while the subject is frozen; a whole-frame measure can't see subject stalls.
+
+Changes to make:
+- In-clip cuts off by default (opt-in per scene). Test them separately, and on Kling later.
+- Director rule: hand-offs and fingers on small objects are implied across a cut or scene
+  boundary, not shown in close-up. This is restaging that keeps the story, per the balance rule.
+- Keep push-ins moderate within one beat (e.g. medium to close-up, not to extreme close-up).
