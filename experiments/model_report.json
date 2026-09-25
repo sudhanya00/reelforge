@@ -1,0 +1,430 @@
+[
+ {
+  "project": "20260925-1820-the-pass-v2ab",
+  "scene": "s01",
+  "model": "gemini-omni",
+  "take": "take_03.mp4",
+  "clip_s": 6.02,
+  "resolution": "720p",
+  "cost": 0.622,
+  "refs": [
+   "env_pass_snow",
+   "char_rider",
+   "prop_motorcycle"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 3.3,
+  "scores": {
+   "identity": 2,
+   "costume": 4,
+   "environment": 4,
+   "action": 4,
+   "camera": 2,
+   "pacing": 5,
+   "physics": 2,
+   "artifacts": 1,
+   "style": 4,
+   "continuity": 5
+  },
+  "issues": [
+   "[2.5-4.5s] fatal artifacts: The rider's face severely warps and melts into an unrecognizable blob.",
+   "[0.0-5.0s] major artifacts: The front wheel spokes are a blurred mess and do not rotate realistically.",
+   "[0.0-5.0s] major artifacts: The luggage on the back of the bike morphs in shape and changes from yellow to a brown/black mass.",
+   "[2.5-6.02s] major camera: The camera pans to the right, ignoring the explicit instruction for a static camera.",
+   "[0.0-6.02s] minor environment: Snow is falling lightly, lacking the 'blinding horizontal' intensity requested."
+  ]
+ },
+ {
+  "project": "20260925-1820-the-pass-v2ab",
+  "scene": "s01",
+  "model": "gemini-omni",
+  "take": "take_04.mp4",
+  "clip_s": 6.02,
+  "resolution": "720p",
+  "cost": 0.6229,
+  "refs": [
+   "env_pass_snow",
+   "char_rider",
+   "prop_motorcycle"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 3.7,
+  "scores": {
+   "identity": 4,
+   "costume": 5,
+   "environment": 2,
+   "action": 3,
+   "camera": 5,
+   "pacing": 4,
+   "physics": 2,
+   "artifacts": 3,
+   "style": 4,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-6.02s] fatal environment: Complete absence of the briefed 'blinding horizontal snow'; the air is clear and visibility is high.",
+   "[0.5-5.5s] major physics: The motorcycle leaves no tire tracks in the snow, breaking the illusion of weight and contact.",
+   "[1.0-5.0s] minor artifacts: The headlight beam appears as a solid, unnatural geometric shape rather than interacting with the atmosphere."
+  ]
+ },
+ {
+  "project": "20260925-2345-monsoon-mail",
+  "scene": "s01",
+  "model": "gemini-omni",
+  "take": "take_05.mp4",
+  "clip_s": 5.01,
+  "resolution": "720p",
+  "cost": 0.5231,
+  "refs": [
+   "env_street",
+   "char_courier",
+   "prop_scooter"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 4.0,
+  "scores": {
+   "identity": 5,
+   "costume": 4,
+   "environment": 5,
+   "action": 3,
+   "camera": 4,
+   "pacing": 5,
+   "physics": 2,
+   "artifacts": 2,
+   "style": 5,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.5-1.75s] fatal artifacts: The front wheel and fender morph significantly, losing their rigid mechanical structure and melting into one another.",
+   "[0.5-1.75s] major physics: The water splashing from the front wheel forms a static, solid-looking mass that dissipates unnaturally instead of behaving like liquid.",
+   "[2.5-5.01s] major physics: The rider leans and looks right to turn, but the scooter's front wheel remains pointed straight, causing the vehicle to slide impossibly rather than steer."
+  ]
+ },
+ {
+  "project": "20260925-2345-monsoon-mail",
+  "scene": "s01",
+  "model": "gemini-omni",
+  "take": "take_06.mp4",
+  "clip_s": 5.01,
+  "resolution": "720p",
+  "cost": 0.5217,
+  "refs": [
+   "env_street",
+   "char_courier",
+   "prop_scooter"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 3.1,
+  "scores": {
+   "identity": 4,
+   "costume": 2,
+   "environment": 5,
+   "action": 3,
+   "camera": 3,
+   "pacing": 4,
+   "physics": 1,
+   "artifacts": 1,
+   "style": 3,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.75-1.5s] fatal artifacts: A jagged, solid glitch artifact appears in front of the scooter instead of a realistic water splash.",
+   "[0.0-4.75s] major costume: The helmet changes color from black to brownish-olive, shifts shape, and the clear visor completely disappears.",
+   "[1.75-4.75s] major artifacts: Rearview mirrors spontaneously appear on the scooter and morph in size and shape.",
+   "[3.0-4.75s] major physics: During the turn, the scooter appears to slide sideways across the ground laterally rather than leaning and steering physically.",
+   "[0.0-5.01s] minor camera: The camera maintains a static medium framing instead of slowly pushing in toward the character's face."
+  ]
+ },
+ {
+  "project": "20260925-2345-monsoon-mail",
+  "scene": "s02",
+  "model": "gemini-omni",
+  "take": "take_05.mp4",
+  "clip_s": 5.01,
+  "resolution": "720p",
+  "cost": 0.5217,
+  "refs": [
+   "env_doorway",
+   "char_courier",
+   "char_postman",
+   "prop_letter"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 3.1,
+  "scores": {
+   "identity": 4,
+   "costume": 2,
+   "environment": 5,
+   "action": 1,
+   "camera": 1,
+   "pacing": 3,
+   "physics": 3,
+   "artifacts": 2,
+   "style": 5,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-2.5s] fatal action: The courier exits the house while the postman arrives from the street, reversing the logical flow of a delivery.",
+   "[2.5-2.6s] fatal camera: An unrequested hard cut completely disrupts the requested continuous, slow push-in shot.",
+   "[2.5-5.01s] major costume: The courier is suddenly wearing black gloves after the cut.",
+   "[3.5-5.01s] major artifacts: The postman's fingers morph and blend into the geometry of the letter as he takes it.",
+   "[0.0-5.01s] minor costume: The postman is missing his reading glasses hanging on his chest."
+  ]
+ },
+ {
+  "project": "20260925-2345-monsoon-mail",
+  "scene": "s02",
+  "model": "gemini-omni",
+  "take": "take_06.mp4",
+  "clip_s": 5.01,
+  "resolution": "720p",
+  "cost": 0.5241,
+  "refs": [
+   "env_doorway",
+   "char_courier",
+   "char_postman",
+   "prop_letter"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 3.7,
+  "scores": {
+   "identity": 4,
+   "costume": 2,
+   "environment": 5,
+   "action": 4,
+   "camera": 5,
+   "pacing": 5,
+   "physics": 1,
+   "artifacts": 1,
+   "style": 5,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-4.75s] minor costume: The courier is wearing black gloves instead of bare hands as shown in the reference.",
+   "[0.25-4.75s] major costume: The postman is missing his reading glasses around his neck.",
+   "[1.25-1.75s] fatal physics: The letter materializes out of nowhere into the courier's hand.",
+   "[3.25-4.75s] fatal artifacts: Severe melting and morphing of the postman's fingers and the letter during the handoff."
+  ]
+ },
+ {
+  "project": "20260925-1820-the-pass-v2ab",
+  "scene": "s01",
+  "model": "veo-fast",
+  "take": "take_05.mp4",
+  "clip_s": 8.0,
+  "resolution": "720p",
+  "cost": 0.8,
+  "refs": [
+   "char_rider",
+   "env_pass_snow",
+   "prop_motorcycle"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 3.4,
+  "scores": {
+   "identity": 4,
+   "costume": 4,
+   "environment": 5,
+   "action": 3,
+   "camera": 2,
+   "pacing": 4,
+   "physics": 1,
+   "artifacts": 1,
+   "style": 5,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-5.0s] fatal artifacts: The front wheel of the motorcycle is missing or melted into a solid block of glare and snow.",
+   "[5.0-6.5s] fatal artifacts: As the motorcycle turns and passes, its entire front geometry is garbled; the wheel is missing and the forks merge with the engine.",
+   "[5.0-8.0s] major camera: The camera pans right to follow the subject instead of remaining completely static."
+  ]
+ },
+ {
+  "project": "20260925-1820-the-pass-v2ab",
+  "scene": "s01",
+  "model": "veo-fast",
+  "take": "take_06.mp4",
+  "clip_s": 8.0,
+  "resolution": "720p",
+  "cost": 0.8,
+  "refs": [
+   "char_rider",
+   "env_pass_snow",
+   "prop_motorcycle"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 4.0,
+  "scores": {
+   "identity": 4,
+   "costume": 5,
+   "environment": 5,
+   "action": 3,
+   "camera": 5,
+   "pacing": 3,
+   "physics": 2,
+   "artifacts": 3,
+   "style": 5,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-5.0s] major physics: The motorcycle glides over the surface without the wheels realistically rotating or interacting with the snow.",
+   "[0.0-8.0s] minor action: The weather effect is mostly ground mist rather than the 'blinding horizontal snow' requested.",
+   "[4.0-5.5s] major artifacts: The front fairing and headlight of the motorcycle morph and lose structural integrity as it approaches the camera.",
+   "[6.5-8.0s] minor pacing: The shot holds on an empty frame for 1.5 seconds after the motorcycle has completely exited."
+  ]
+ },
+ {
+  "project": "20260925-2345-monsoon-mail",
+  "scene": "s01",
+  "model": "veo-fast",
+  "take": "take_07.mp4",
+  "clip_s": 8.0,
+  "resolution": "720p",
+  "cost": 0.8,
+  "refs": [
+   "char_courier",
+   "env_street",
+   "prop_scooter"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 2.7,
+  "scores": {
+   "identity": 4,
+   "costume": 3,
+   "environment": 4,
+   "action": 1,
+   "camera": 1,
+   "pacing": 2,
+   "physics": 1,
+   "artifacts": 2,
+   "style": 4,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-3.5s] fatal camera: The camera is tracking forward behind the rider, directly contradicting the brief to track backward ahead of her.",
+   "[3.5-5.5s] fatal physics: The scooter performs a physically impossible 180-degree spin on the spot, sliding sideways without leaning.",
+   "[0.0-8.0s] fatal action: The briefed action of riding fast and leaning into a turn never occurs.",
+   "[4.0-8.0s] major physics: The scooter's kickstand magically deploys and remains down while the vehicle is supposedly in motion.",
+   "[3.5-5.5s] major artifacts: Warping and morphing of the scooter body and the rider's legs during the spin transition.",
+   "[4.0-5.5s] minor costume: White sneakers appear on the rider, contrary to the dark clothing in the reference."
+  ]
+ },
+ {
+  "project": "20260925-2345-monsoon-mail",
+  "scene": "s01",
+  "model": "veo-fast",
+  "take": "take_08.mp4",
+  "clip_s": 8.0,
+  "resolution": "720p",
+  "cost": 0.8,
+  "refs": [
+   "char_courier",
+   "env_street",
+   "prop_scooter"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 3.2,
+  "scores": {
+   "identity": 5,
+   "costume": 4,
+   "environment": 5,
+   "action": 1,
+   "camera": 3,
+   "pacing": 2,
+   "physics": 1,
+   "artifacts": 1,
+   "style": 5,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-8.0s] fatal artifacts: The front wheel of the scooter is completely missing, replaced by a tiny stub.",
+   "[0.0-8.0s] fatal action: The courier drags her feet on the ground to propel the scooter, rather than riding fast with her feet up.",
+   "[0.0-2.0s] fatal physics: A massive water splash occurs in front of the scooter despite its low speed, and then completely vanishes.",
+   "[2.75-4.0s] major artifacts: A large yellow delivery backpack and black straps materialize onto the character's back.",
+   "[7.0-8.0s] major camera: The camera push-in suddenly reverses, awkwardly pulling away from the subject's face."
+  ]
+ },
+ {
+  "project": "20260925-2345-monsoon-mail",
+  "scene": "s02",
+  "model": "veo-fast",
+  "take": "take_07.mp4",
+  "clip_s": 8.0,
+  "resolution": "720p",
+  "cost": 0.8,
+  "refs": [
+   "char_courier",
+   "char_postman",
+   "env_doorway"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 3.3,
+  "scores": {
+   "identity": 4,
+   "costume": 2,
+   "environment": 5,
+   "action": 2,
+   "camera": 5,
+   "pacing": 2,
+   "physics": 2,
+   "artifacts": 1,
+   "style": 5,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-8.0s] major costume: The motorcycle courier is generated completely barefoot.",
+   "[0.0-8.0s] major action: The courier does not arrive at the doorway; she is present from the first frame.",
+   "[0.0-3.5s] major pacing: The characters stand completely still, stalling the briefed action for nearly half the shot.",
+   "[3.5-4.5s] fatal artifacts: The dark stick-like object in the courier's bare hand suddenly morphs into a white letter, and a grey glove pops into existence on her hand.",
+   "[5.0-8.0s] major physics: The letter bends unnaturally and merges into the characters' fingers during the handoff."
+  ]
+ },
+ {
+  "project": "20260925-2345-monsoon-mail",
+  "scene": "s02",
+  "model": "veo-fast",
+  "take": "take_08.mp4",
+  "clip_s": 8.0,
+  "resolution": "720p",
+  "cost": 0.8,
+  "refs": [
+   "char_courier",
+   "char_postman",
+   "env_doorway"
+  ],
+  "refs_dropped": null,
+  "verdict": "reshoot",
+  "overall": 2.8,
+  "scores": {
+   "identity": 4,
+   "costume": 2,
+   "environment": 4,
+   "action": 2,
+   "camera": 1,
+   "pacing": 2,
+   "physics": 2,
+   "artifacts": 2,
+   "style": 4,
+   "continuity": 5
+  },
+  "issues": [
+   "[0.0-3.5s] minor action: Characters mouth dialogue despite the brief explicitly stating 'No dialogue'.",
+   "[1.25-3.5s] major costume: The courier's left hand suddenly morphs into a white glove.",
+   "[3.75-3.75s] fatal camera: Unrequested hard cut to a tighter framing.",
+   "[3.75-8.0s] major physics: The letter materialises out of nowhere at the cut.",
+   "[4.25-8.0s] major artifacts: The postman's right hand has extra fingers and melts into the letter.",
+   "[4.5-8.0s] major pacing: Characters awkwardly freeze and hold the letter together for the remainder of the clip."
+  ]
+ }
+]

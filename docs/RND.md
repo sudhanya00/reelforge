@@ -178,3 +178,48 @@ trading one failure for another. The larger levers are probably outside the prom
 - **Reference format**: a 16:9 four-view sheet gives each figure a small slice of the frame; a
   single large front view may carry costume better.
 - **Model**: the same scenes on Kling, when a key is available.
+
+## Model round: Gemini Omni vs Veo 3.1 Fast at 720p (2026-09-26)
+
+Same v2 plans and references; scenes: The Pass s01 (bike in storm, 16:9), Monsoon Mail s01
+(courier riding) and s02 (doorway), 9:16; 2 takes each per model; all reviewed. Spend about
+$8.80 (Omni video $3.34, Veo video $4.80, reviews ~$0.66). The first 6 Veo attempts were
+rejected at validation (see below), so no video came back for them.
+
+Found on the first live shots: **Veo only makes 8 s clips when reference images are attached**
+("supported durations are [8] for feature reference_to_video"). The provider now shoots 8 s and
+stretches the beats to fill it. Veo accepted references in 9:16.
+
+| | Omni 720p | Veo 3.1 Fast 720p |
+|---|---|---|
+| Mean overall (1-5) | **3.48** | 3.23 |
+| Keep / fix / reshoot | 0 / 0 / 6 | 0 / 0 / 6 |
+| Identity | 3.83 | **4.17** |
+| Environment | 4.33 | **4.67** |
+| Style | 4.33 | **4.67** |
+| Action | **3.00** | 2.00 |
+| Camera | **3.33** | 2.83 |
+| Pacing | **4.33** | 2.50 |
+| Physics | 1.83 | 1.50 |
+| Artifacts | 1.67 | 1.67 |
+| Video cost per take | ~$0.56 | $0.80 (8 s forced) |
+
+Reading it:
+- **Veo Fast isn't better for these scenes.** It holds faces, locations and the look slightly
+  better, but it follows direction worse: it tracked from the wrong side, spun the scooter 180°,
+  had the courier push the scooter with her feet, and stalled. Forced 8 s clips add padding: an
+  empty frame for 1.5 s after the bike left, characters frozen for half the shot.
+- **720p didn't fix the morphing.** The same scenes at 360p scored 3.25-4.2; at 720p Omni
+  scored 3.48. Wheels, hands and handed-over objects fail at both resolutions. Keep 360p for tests.
+- **Vehicles and hands fail in every model tried** (physics 1.5-1.8 for both). These three
+  scenes were chosen as the hardest; they are a floor of current models, not of our prompts.
+- **Every take in this round was "reshoot"**, including takes that look acceptable in motion.
+  The reviewer may be stricter than an audience; it needs calibrating against human picks.
+
+Decisions:
+- Omni stays the default. Veo and Veo Fast stay available per scene (better identity and look;
+  no edits; 8 s with references).
+- Stop spending on prompt fixes for vehicles and hand-offs. The director should stage around
+  them where the story allows (the balance rule): vehicles side-on or away from camera, short
+  and straight; objects in hand from the first frame; hand-offs implied by the edit.
+- Next: calibrate the reviewer with human ratings before more rounds.
