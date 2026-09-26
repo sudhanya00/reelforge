@@ -449,7 +449,7 @@ export const api = {
     if (!res.ok) throw new ApiError((await res.json().catch(() => ({}))).detail ?? `${res.status}`);
     return ((await res.json()) as { token: string }).token;
   },
-  describePhotos: (what: "person" | "product", tokens: string[], product?: string) =>
+  describePhotos: (what: "person" | "product" | "inspiration", tokens: string[], product?: string) =>
     call<Job>("POST", "/api/describe", { what, tokens, product: product ?? null }),
   createProduct: (b: Partial<Omit<Product, "photos">> & { photos: string[] }) =>
     call<{ product: Product; job: Job }>("POST", "/api/products", b),

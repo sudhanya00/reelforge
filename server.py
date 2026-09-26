@@ -1186,14 +1186,14 @@ async def upload_image(request: Request):
 class DescribeIn(BaseModel):
     tokens: list[str] = []
     product: str | None = None                       # describe a saved product's photos instead
-    what: str                                        # person | product
+    what: str                                        # person | product | inspiration
 
 
 @app.post("/api/describe")
 def describe_photos(body: DescribeIn):
     """AI reads photos into fields: a person's look (never who they are), or a product."""
-    if body.what not in ("person", "product"):
-        raise HTTPException(400, "Describe a person or a product")
+    if body.what not in ("person", "product", "inspiration"):
+        raise HTTPException(400, "Describe a person, a product or a mood board")
     try:
         photos = (the_products().photos(body.product) if body.product
                   else [the_uploads().path(t) for t in body.tokens])
@@ -1205,7 +1205,8 @@ def describe_photos(body: DescribeIn):
 
     def run(job: Job):
         job.step("describe", "Looking at the photos")
-        fn = infl.describe_person if body.what == "person" else prod.describe
+        fn = {"person": infl.describe_person, "product": prod.describe,
+              "inspiration": infl.describe_inspiration}[body.what]
         out, usage = fn(client_for(s), s, photos)
         the_influencers().log_design(model=s.planner_model, usage=usage, cost_usd=pl.call_cost(s.planner_model, usage))
         return {"fields": out}

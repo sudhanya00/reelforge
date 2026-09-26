@@ -151,6 +151,11 @@ class FakeClient:
         if "describe a product from photos" in system:
             return NS(text=json.dumps({"name": "satin lipstick", "brand": "Rouge Co", "kind": "beauty",
                                        "description": 'A red bullet in a gold case printed "ROUGE".'}), usage_metadata=usage)
+        if "read a mood board" in system:
+            return NS(text=json.dumps({"hair": "honey-blonde, long, soft waves", "skin": "fair with a warm flush",
+                                       "body": "curvy hourglass", "style": "flirty y2k, glossy makeup",
+                                       "outfit": "baby-pink ribbed cardigan, white mini skirt",
+                                       "persona": "bubbly, playful, a little self-aware"}), usage_metadata=usage)
         if "describe how a person looks in photos" in system:
             return NS(text=json.dumps({"hair": "dark brown bob", "skin": "olive, freckles", "body": "tall, slim",
                                        "features": "round glasses", "style": "minimal", "outfit": "white shirt"}),

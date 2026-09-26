@@ -603,3 +603,18 @@ def test_products_and_a_character_from_photos(api, fake):
     mp.setattr(send2trash, "send2trash", lambda p: None)
     assert api.delete(f"/api/products/{pid}").json()["ok"]
     mp.undo()
+
+
+def test_mood_board_reads_a_type_and_keeps_nothing(api, fake):
+    toks = [_upload(api, (240, 200, 150)), _upload(api, (250, 180, 190))]
+    j = wait(api, api.post("/api/describe", json={"tokens": toks, "what": "inspiration"}).json())
+    assert j["status"] == "done", j
+    f = j["result"]["fields"]
+    assert f["hair"].startswith("honey-blonde") and f["persona"].startswith("bubbly")
+    assert not {"features", "ethnicity", "age", "gender"} & set(f)          # no faces, no identity
+    sent = [c for c in fake.calls if c[0] == "generate_content"][-1]
+    assert "never describe facial structure" in sent[3].system_instruction
+    # made from words only: no source photos, no consent needed
+    inf = api.post("/api/influencers", json={"profile": {"name": "Bree", **f}}).json()
+    assert inf["sources"] == [] and inf["consent"] is None
+    assert api.post("/api/describe", json={"tokens": toks, "what": "celebrity"}).status_code == 400

@@ -240,6 +240,32 @@ DESCRIBE_PERSON_SCHEMA = {"type": "object", "required": list(DESCRIBE_PERSON_KEY
                           "properties": {k: {"type": "string"} for k in DESCRIBE_PERSON_KEYS}}
 
 
+INSPIRATION_SYSTEM = """You read a mood board for designing a NEW, original social-media creator. The
+images show looks, styles and vibes the user likes (people, outfits, makeup, settings). Describe
+the TYPE they share, in words, so a new person can be designed with that feel.
+- Never identify or name anyone, and never describe facial structure (face shape, eyes, nose,
+  lips, jaw, brows): the new person gets their own face.
+- hair: colour, length, texture and styling.
+- skin: tone and finish (e.g. fair with a warm flush, sun-kissed).
+- body: build and silhouette.
+- style: fashion sense and makeup style.
+- outfit: one signature outfit in that style: garments, colours, fabrics.
+- persona: the energy and vibe the images project, as a personality to start from (warm,
+  bubbly, playful...), without claims about anyone real.
+If the images don't agree, describe the common thread."""
+
+INSPIRATION_KEYS = ("hair", "skin", "body", "style", "outfit", "persona")
+INSPIRATION_SCHEMA = {"type": "object", "required": list(INSPIRATION_KEYS),
+                      "properties": {k: {"type": "string"} for k in INSPIRATION_KEYS}}
+
+
+def describe_inspiration(client, s: pl.Settings, photos: list[Path]) -> tuple[dict, dict]:
+    """A mood board read into words. The images are only read here: they never go to the
+    image or video models and aren't kept with the creator."""
+    return pl.json_call_with_images(client, s, INSPIRATION_SYSTEM, "Describe the type these images share.",
+                                    photos[:8], INSPIRATION_SCHEMA, "describe inspiration")
+
+
 def describe_person(client, s: pl.Settings, photos: list[Path]) -> tuple[dict, dict]:
     return pl.json_call_with_images(client, s, DESCRIBE_PERSON_SYSTEM, "Describe how this person looks.",
                                     photos[:4], DESCRIBE_PERSON_SCHEMA, "describe person")

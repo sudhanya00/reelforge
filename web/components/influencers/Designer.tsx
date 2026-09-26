@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
-import { ArrowRight, Camera, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Camera, LayoutGrid, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Input, Label, LiveBars, Textarea } from "@/components/ui/primitives";
 import { JobProgress } from "@/components/progress";
@@ -14,6 +14,7 @@ import { PhotoDrop, type Photo } from "./PhotoDrop";
 
 const CONSENT = "These are photos of me, or of someone who agreed to be made into an AI character. They are not a celebrity or public figure.";
 const FROM_PHOTOS: ProfileKey[] = ["hair", "skin", "body", "features", "style", "outfit"];
+const FROM_BOARD: ProfileKey[] = ["hair", "skin", "body", "style", "outfit", "persona"];
 import { cn, usd } from "@/lib/utils";
 
 type Field = { key: ProfileKey; label: string; placeholder: string; picks?: string[]; long?: boolean };
@@ -105,6 +106,31 @@ export function Designer({
     });
   }, []);
   useJobResult(reading, onRead);
+  const [board, setBoard] = React.useState<Photo[]>([]);
+  const [boardOpen, setBoardOpen] = React.useState(false);
+  const [readingBoard, setReadingBoard] = React.useState<string | null>(null);
+  const onBoard = React.useCallback((j: Job) => {
+    setReadingBoard(null);
+    if (j.status !== "done") return void toast.error("Couldn't read the mood board", { description: j.error ?? undefined });
+    const got = (j.result?.fields ?? {}) as Partial<Profile>;
+    setProfile((p) => {
+      const next = { ...p };
+      for (const k of FROM_BOARD) if (got[k] && !p[k].trim()) next[k] = got[k]!;
+      return next;
+    });
+    toast.success("Type read from your mood board", { description: "Filled the empty fields. Edit anything, then let AI design the rest." });
+  }, []);
+  useJobResult(readingBoard, onBoard);
+  const readBoard = async () => {
+    try {
+      const j = await api.describePhotos("inspiration", board.map((x) => x.token));
+      setReadingBoard(j.id);
+      mutate("/api/jobs");
+    } catch (e) {
+      toast.error("Couldn't start", { description: (e as Error).message });
+    }
+  };
+
   const readPhotos = async () => {
     try {
       const j = await api.describePhotos("person", photos.map((x) => x.token));
@@ -199,7 +225,31 @@ export function Designer({
         </div>
 
         <div className="min-h-0 flex-1 space-y-7 overflow-y-auto px-6 py-6 scrollbar-thin">
-          {!id && (
+          {!id && !fromPhotos && (
+            <section className="rounded-xl border p-4">
+              <label className="flex cursor-pointer items-center gap-3">
+                <LayoutGrid className="size-4 text-muted-foreground" />
+                <span className="flex-1">
+                  <span className="block text-sm font-semibold">Mood board</span>
+                  <span className="block text-xs text-muted-foreground">Images of looks, styles and vibes you like, read into words for the type.</span>
+                </span>
+                <input type="checkbox" checked={boardOpen} onChange={(e) => setBoardOpen(e.target.checked)} className="size-4 accent-foreground" />
+              </label>
+              {boardOpen && (
+                <div className="mt-4 space-y-3">
+                  <PhotoDrop photos={board} onChange={setBoard} max={8} hint="Up to 8: people whose type you like, outfits, makeup, aesthetics. Mixing several gives a clearer type." />
+                  <Button size="sm" variant="secondary" shape="pill" onClick={readBoard} disabled={!board.length || !!readingBoard}>
+                    {readingBoard ? <LiveBars /> : <Sparkles />}
+                    Read the type
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">
+                    Fills hair, skin, build, style, outfit and personality. Faces aren&apos;t described and the images are only read, never sent to the image or video models or kept, so your creator gets a face of their own.
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+          {!id && !boardOpen && (
             <section className="rounded-xl border p-4">
               <label className="flex cursor-pointer items-center gap-3">
                 <Camera className="size-4 text-muted-foreground" />
