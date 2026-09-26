@@ -202,9 +202,8 @@ IDENTITY = [
                              "photographed by a friend."),
     ("full_body", "9:16", True, "Full-length, standing naturally, photographed by a friend at eye "
                                 "level, so their build and proportions are clear."),
-    ("setting", "9:16", False, "The place with nobody in it, seen from where the person usually "
-                               "holds the phone to film themselves: eye level, arm's length from "
-                               "their usual spot."),
+    ("setting", "9:16", False, "An empty room: a plain eye-level photo of the place where they usually "
+                               "film, with no people, no hands and no phone in the frame."),
 ]
 VIEW_IDS = [v[0] for v in IDENTITY]
 
@@ -272,8 +271,8 @@ def describe_person(client, s: pl.Settings, photos: list[Path]) -> tuple[dict, d
 
 
 def place_prompt(description: str) -> str:
-    return (f"The place with nobody in it, at eye level, from where someone would film themselves "
-            f"on a phone: {dot(description)} {PHOTO_REALISM}")
+    return (f"An empty place: a plain eye-level photo with no people, no hands and no phone in the frame. "
+            f"{dot(description)} {PHOTO_REALISM}")
 
 
 # ---------------------------------------------------------------- scripts

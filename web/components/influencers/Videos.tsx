@@ -530,7 +530,15 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
   const src = playing ?? (v.edit?.url && !v.edit.stale ? v.edit.url : null) ?? v.final ?? v.turns.at(-1)?.url ?? null;
   const painting = running.find((j) => j.project === infKey(inf.id) && j.kind === "opening" && j.claims.includes(v.id));
   const exporting = running.find((j) => j.project === infKey(inf.id) && j.kind === "export" && j.claims.includes(v.id));
+  // a link can open the editor: ?...&edit=captions&t=2
+  const [link] = React.useState(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search));
+  const linkTab = link?.get("edit") === "captions" ? "captions" : link?.get("edit") ? "edit" : null;
   const [editing, setEditing] = React.useState(false);
+  React.useEffect(() => {
+    if (linkTab && v.final) setEditing(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const edited = v.edit?.url && !v.edit.stale ? v.edit.url : null;
   const fileName = `${(inf.profile.handle || inf.profile.name).replace(/^@/, "")} - ${v.title}`.replace(/[\\/:*?"<>|]/g, "");
 
@@ -727,6 +735,8 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
               duration={v.edit.duration_s}
               initial={v.edit.params}
               onExport={exportEdit}
+              initialTab={linkTab ?? "edit"}
+              startAt={Number(link?.get("t")) || undefined}
               captions={
                 caps && catalog
                   ? {

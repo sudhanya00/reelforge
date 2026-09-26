@@ -35,6 +35,8 @@ export function EditDialog({
   initial,
   onExport,
   captions,
+  initialTab = "edit",
+  startAt,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -44,6 +46,8 @@ export function EditDialog({
   initial: EditParams;
   onExport: (e: EditParams) => Promise<void>;
   captions?: CaptionsProps;
+  initialTab?: "edit" | "captions";
+  startAt?: number;
 }) {
   const [e, setE] = React.useState<EditParams>(initial);
   const [t, setT] = React.useState(0);
@@ -54,7 +58,7 @@ export function EditDialog({
   const audio = React.useRef<{ ctx: AudioContext; gain: GainNode } | null>(null);
   const fid = React.useId().replace(/:/g, "");
   const end = e.end ?? duration;
-  const [tab, setTab] = React.useState<"edit" | "captions">("edit");
+  const [tab, setTab] = React.useState<"edit" | "captions">(initialTab);
   const [box, setBox] = React.useState({ w: 0, h: 0 });
   useCaptionFonts(captions?.catalog.fonts);
 
@@ -63,6 +67,10 @@ export function EditDialog({
   const videoRef = React.useCallback((el: HTMLVideoElement | null) => {
     video.current = el;
     setVideoEl(el);
+    if (el && startAt) {
+      el.currentTime = startAt;
+      setT(startAt);
+    }
   }, []);
   React.useEffect(() => {
     if (!videoEl) return;
@@ -158,7 +166,7 @@ export function EditDialog({
             </feComponentTransfer>
           </filter>
         </svg>
-        <div className="grid max-h-[calc(100vh-2rem)] min-h-0 md:grid-cols-[1fr_340px]">
+        <div className="grid max-h-[calc(100vh-2rem)] min-h-0 md:h-[min(860px,calc(100vh-2rem))] md:grid-cols-[1fr_340px] md:grid-rows-[minmax(0,1fr)]">
           <div className="flex min-h-0 flex-col gap-3 bg-black/90 p-4">
             <div className="flex min-h-0 flex-1 items-center justify-center">
               <div className="relative">

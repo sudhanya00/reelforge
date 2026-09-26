@@ -69,7 +69,7 @@ export const CaptionsPanel = React.memo(function CaptionsPanel({
                     same(p.style, st) ? "ring-2 ring-foreground" : "hover:border-foreground/40",
                   )}
                 >
-                  <span style={{ ...captionTextStyle({ ...p.style, lines: 1 }, catalog.fonts, 170), whiteSpace: "nowrap" }}>
+                  <span style={{ ...captionTextStyle({ ...p.style, lines: 1 }, catalog.fonts, 380), whiteSpace: "nowrap" }}>
                     {p.style.animation.startsWith("highlight") ? (
                       <>
                         <span style={{ color: p.style.highlight }}>Hey</span> there

@@ -70,8 +70,8 @@ export function CaptionOverlay({
         style={{
           color: on ? style.highlight : undefined,
           visibility: hidden ? "hidden" : undefined,
-          display: anim === "highlight_pop" ? "inline-block" : undefined,
-          transform: on && anim === "highlight_pop" ? "scale(1.15)" : undefined,
+          // a real size change, so the line reflows like libass font scaling (a transform would overlap)
+          fontSize: on && anim === "highlight_pop" ? "1.15em" : undefined,
         }}
       >
         {words[i].text}

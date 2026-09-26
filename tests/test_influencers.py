@@ -46,7 +46,7 @@ def test_identity_prompts_are_raw_and_anchor_on_the_face():
     assert "selfie" in face and "visible pores" in face and "reference photo" not in face
     assert side.startswith("The same person as in the reference photo")
     assert "mole above the lip" in side and "olive cardigan" in side
-    assert "nobody in it" in room and "green kettle" in room and "Filipino" not in room
+    assert "no people, no hands and no phone" in room and "green kettle" in room and "Filipino" not in room
 
 
 def test_paint_identity_face_first_then_views_from_it(client, s, lib, mira):

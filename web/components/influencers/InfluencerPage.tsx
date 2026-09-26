@@ -42,6 +42,11 @@ function useIdentityJob(id: string) {
   return running.find((j) => j.project === infKey(id) && j.kind === "identity");
 }
 
+/** Fields as sentences: each ends with one full stop, however it was typed. */
+const sentences = (...xs: (string | false | undefined)[]) =>
+  xs.filter((x): x is string => !!x && !!x.trim()).map((x) => x.trim().replace(/[.;,\s]+$/, "") + ".").join(" ");
+const lowerFirst = (s: string) => (/^(A|An|The) /.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
+
 function IdentityTab({ inf }: { inf: Influencer }) {
   const { data: state } = useAppState();
   const { mutate } = useSWRConfig();
@@ -114,8 +119,8 @@ function IdentityTab({ inf }: { inf: Influencer }) {
           {(
             [
               ["Who", [p.age && `${p.age}`, p.ethnicity, p.gender].filter(Boolean).join(", ")],
-              ["Look", [p.hair, p.body, p.features].filter(Boolean).join("; ")],
-              ["Style", [p.style, p.outfit && `usually ${p.outfit}`].filter(Boolean).join("; ")],
+              ["Look", sentences(p.hair, p.body, p.features)],
+              ["Style", sentences(p.style, p.outfit && `Usually: ${lowerFirst(p.outfit)}`)],
               ["Personality", p.persona],
               ["Talks", p.speech],
               ["Voice", p.voice],

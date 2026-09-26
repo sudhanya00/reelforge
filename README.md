@@ -1,131 +1,101 @@
 # ReelForge
 
-Idea in, film out. Gemini 3.1 Pro writes the production plan, Nano Banana Pro paints
-character / prop / location references, Gemini Omni Flash shoots each scene with those
-references attached, ffmpeg stitches the selected takes.
+**An AI video studio that plans, casts, shoots and edits short films and creator videos, with characters that stay the same person in every shot.**
 
-## Start it
-Double-click **`ReelForge.bat`**. It sets things up on first run, starts the app and opens
-your browser at http://localhost:8765. Close the console window to stop it.
+Type an idea and ReelForge writes a production plan, paints the cast and locations, shoots every scene with those references attached, and cuts the film. Or design a creator once (their face, personality, voice, the places they film) and make selfie vlogs, mirror try-ons, walk-and-talks and product reviews where they always look and sound like themselves, with captions that are exactly the script.
 
-    python launch.py --shortcut     # put a ReelForge icon on the desktop
-    python launch.py --demo         # try the UI with a fake model; nothing is billed
+It runs locally: a Python engine over Google's generative models (Gemini 3.1 Pro, Nano Banana Pro, Gemini Omni Flash, Veo 3.1), ffmpeg for the edit, and a Next.js interface.
 
-Needs Python 3.11+, Node.js (only to build the UI after updates) and ffmpeg
-(`winget install Gyan.FFmpeg`) for continuous scenes, posters and stitching.
+<p align="center">
+  <img src="docs/images/films.jpg" width="49%" alt="Films: the story composer" />
+  <img src="docs/images/creator-identity.jpg" width="49%" alt="A creator's identity pack and casting" />
+</p>
+<p align="center">
+  <img src="docs/images/creator-video.jpg" width="49%" alt="A creator video: format, place, outfit, product and the shot" />
+  <img src="docs/images/editor-captions.jpg" width="49%" alt="The editor with script-exact captions" />
+</p>
 
-## Credentials (`.env` next to this file)
-GCP credits apply only through Vertex AI:
+## What it does
 
-    GOOGLE_GENAI_USE_VERTEXAI=true
-    GOOGLE_CLOUD_PROJECT=<your-project-id>
-    GOOGLE_CLOUD_LOCATION=global     # preview models are usually served from global
+**Films**: idea → plan with timed beats → a director pass → reference sheets → scenes → final cut
+- Style presets (live action, 3D animated, anime, cyberpunk, noir) and pacing (calm, balanced, kinetic).
+- Every scene is shot with its character, prop and location references attached; continuous scenes start from the previous shot's last frame.
+- Pick a model per scene (Gemini Omni, Veo 3.1, Kling), fix a take with a sentence ("heavier snow") instead of re-rolling it, or have an AI reviewer score it.
+- A character library: save a character from one film and cast them in the next.
 
-then run `gcloud auth application-default login` once. Or use an AI Studio key:
-`GEMINI_API_KEY=...`. Backend, project, models and defaults can also be changed in the
-app's Settings (saved to `reelforge.settings.json`). On Vertex, 1080p/4k needs a Cloud
-Storage bucket, which isn't wired up yet; 360p/720p work.
+**Creators**: design → casting → identity → places and products → videos → captions
+- Design from a concept, a **mood board** (read into words for the type, never copying a face), or consented photos of a real person.
+- **Casting**: paint a few faces, refine one with notes, lock it. An identity pack (face, three-quarter, profile, full body) anchors every video.
+- Six camera formats: selfie, propped-up phone, walk and talk, mirror, walk into frame, podcast. Each video picks its own place, outfit, position and light.
+- **Products from photos**: the exact top or lipstick, worn or held. The script uses only the facts you give it.
+- Videos are one continuous take of up to 40 s: a painted opening frame, then extended 10 s at a time so the face, voice, room and camera never cut.
+- **Captions that are exactly the script**, timed to the voice, styled and burned in, with presets, animations and any Google font.
 
-## Video models
-Every scene can be shot by a different model (Scenes tab, per-scene picker; the default is in
-Settings). Each model is a provider in `providers/` talking to that company's own API:
+## How it works
 
-| Provider | Model | Setup |
+```mermaid
+flowchart LR
+    subgraph Films
+      A[Idea] --> B[Plan<br/>Gemini 3.1 Pro] --> C[Director pass] --> D[Reference sheets<br/>Nano Banana Pro]
+      D --> E[Scenes<br/>Omni / Veo / Kling] --> F[Review + fix] --> G[Final cut<br/>ffmpeg]
+    end
+    subgraph Creators
+      H[Profile + casting] --> I[Identity pack] --> J[Script + setup]
+      K[Places + products] --> L
+      J --> L[Opening frame] --> M[Shot + extensions<br/>one continuous take] --> N[Captions + edit]
+    end
+```
+
+A few decisions that make the difference:
+
+- **Consistency without fine-tuning.** Nothing is trained per character. Identity comes from painted reference images passed to the video model on every shot, and each reference image is labelled by position in the prompt, so the model knows which image is the person, the place or the product. Creator videos start from an opening frame painted from those references, then grow as a single take, so there is no cut for the face to drift across.
+- **A director that stages around what video models get wrong**, learned from the R&D below: objects are in hand from the first frame, hand-offs happen across an edit instead of in close-up, vehicles travel straight.
+- **A provider layer.** Each model is an adapter (prompt syntax, submit, collect, price) talking to that company's own API. The job id is logged before waiting, so a paid clip is never lost to a crash.
+- **Captions you can trust.** The AI never writes caption text; it only returns when each numbered script word is spoken, and flags where the delivery differs from the script. The live preview uses the same colour maths and corrected font metrics as the libass export, so what you see is what you get.
+- **Cost-aware by design.** Every call is logged with an estimated cost, every button that spends money shows its price, and anything over $1 asks first. The tracker came within about 10-15% of the real Google Cloud bill.
+- **Guardrails.** Characters from real photos require a consent statement; mood boards never pass a face to the image or video models; uploads are re-encoded with EXIF and location stripped.
+- **Tested offline.** 150+ tests run against fakes of every API, and a demo mode runs the whole interface with a fake model, so nothing is billed while building.
+
+## What I learned about AI video
+
+I ran controlled rounds (same scenes, two takes each, every take scored 1-5 by an AI reviewer against the plan) before deciding how the planner and director should work. The full log is in [docs/RND.md](docs/RND.md).
+
+| Round | Question | Result |
 |---|---|---|
-| Gemini Omni Flash | `gemini-omni-1.1-flash(-preview)` | the Google credentials above |
-| Kling 3.0 Omni | `kling-3.0-omni` | `KLING_API_KEY=...` in `.env` (Kling console → API Keys) |
+| Baseline | Where do takes fail? | Frozen starts, morphing on 3D motion toward camera, garbled text, and style words that turn into artefacts ("anamorphic" became a static lens flare) |
+| A/B 1 | Do timed beats and a director pass help? | Yes: mean 4.22 vs 3.85; physics 2.5 to 3.3; usable-or-fixable takes 1/6 to 3/6 |
+| A/B 2 | Fresh plans, cuts inside a clip | Cuts inside a clip made costumes drift (4.67 to 2.83); a close-up hand-off merged fingers into the envelope, so hand-offs are now implied across an edit |
+| Check | Did the fixes hold? | The targeted failures were gone, but objects "materialised" mid-shot, so now every object a character uses is visible from the first frame and positions are stated |
+| Models | Omni vs Veo 3.1 Fast at 720p | Omni 3.48 vs Veo 3.23: Veo holds faces slightly better but follows direction worse; 720p didn't fix morphing; wheels and hands fail in every model tried |
 
-Kling shoots 3-15 s clips at 720p and up (360p requests are shot at 720p), and can only edit
-takes it made in the last 30 days. Edits always go to the model that made the take. To add a
-model, write a `VideoProvider` (prompt syntax, submit, collect, price) and register it in
-`providers/__init__.py`.
+The takeaway: prompt changes fix the failures they target, but current models have a floor on vehicles, hands and small objects. The better lever is staging around them, which is what the director does.
 
-## Workflow
-1. **Plan**: describe the story; review and edit the plan before anything costly runs.
-2. **References**: paint the cast, props and locations; repaint or edit prompts until right.
-3. **Scenes**: shoot takes, pick the best, or describe a fix ("heavier snow") to edit a take
-   instead of re-rolling it.
-4. **Final cut**: stitch the selected takes.
+## What it costs
 
-"Make it all" / "Make everything missing" run the rest with no checkpoints. They skip
-what already exists, so re-running resumes an interrupted or failed run. Rate limits are
-retried; billing/credential/permission errors stop the run at once; a scene whose
-references failed is skipped rather than shot without them.
+| | Price |
+|---|---|
+| A reference image or opening frame (Nano Banana Pro, 2K) | $0.13 |
+| Video, Gemini Omni | 360p $0.034/s · 720p $0.101/s · 1080p $0.152/s |
+| A 30 s creator video at 720p, including its opening frame | ~$3.40 |
+| Casting four faces | ~$0.54 |
+| Syncing captions to the voice | ~$0.02 |
 
-## Influencers
-Switch to **Influencers** in the top bar. Design a fictional creator (look, persona, voice,
-home); AI fills whatever you leave empty. Paint their **identity pack** (face first, then
-three-quarter, profile, full body and home, all raw and unretouched) and add **places**
-they film in more than once (gym, café, car...).
+An Omni extension returns the whole take but bills output only for its new seconds (measured on a live run), which is what makes 30-40 s continuous takes affordable.
 
-A creator can also be made **from photos** of a real person (yourself, or someone who agreed;
-a consent statement is stored with them): every identity view is painted from the photos. The
-voice is still Omni's, from the description: Omni takes no audio references, so it can't clone one.
+## Built with
 
-**Products** (Influencers page): add photos of a real item, AI fills in what it looks like, and a
-clean product shot is painted. Feature up to two in a video, worn or held: the script uses only
-the facts you give, the opening frame shows the exact item, and Omni keeps it through the take.
+Python · FastAPI · google-genai on Vertex AI (Gemini 3.1 Pro, Nano Banana Pro, Gemini Omni Flash, Veo 3.1) · Kling API · ffmpeg and libass · Next.js 16 (static export) · Tailwind CSS v4 · Radix · SWR · Motion · Phosphor icons
 
-Each video has its own **setup**: a format (selfie talking head, propped-up phone, walk and
-talk, mirror, walk into frame, podcast), where, what they wear, their position and the light.
-AI proposes it with the script, in their voice, split into 10 s segments; you edit both.
-An **opening frame** (one image, two for walk-ins) is painted from the identity pack for the
-setup; **Shoot** starts the video from it and extends the same take with Gemini Omni, 10 s
-at a time, up to 40 s. Stored under `library/influencers/<id>/`.
+About 7,000 lines of Python and 8,000 of TypeScript, with 150+ offline tests.
 
-## Edit, download, 1080p
-Finished films and videos have **Download** and **Edit**: trim, colour (looks, brightness,
-contrast, saturation, warmth) and audio (volume, reduce noise, even out loudness, mute).
-Edits export a copy (`edited.mp4`); the original stays.
+## Run it
 
-**Captions** (influencer videos, in Edit → Captions) are your script's words, never
-transcribed. Timing is estimated from the script, or **Sync to the voice** (≈$0.02) times your
-words to the audio without changing them, and flags where the delivery differs from the
-script. Pick a preset or set font, size, colours, outline, box, position, words per caption
-and animation (pop, fade, highlight the spoken word, word by word); save your own presets.
-Captions are burned in on export with bundled open-licence fonts (`fonts/`), plus any you add
-under Font → **Add font**: search Google Fonts (free, any weight), one-click popular caption fonts,
-or upload a .ttf/.otf. Added fonts live in `library/fonts/`.
+Windows: double-click **`ReelForge.bat`**. Anywhere else: `python launch.py`. Try it without any account or cost:
 
-1080p is native (Omni renders it), not upscaled. On Vertex it's delivered through a Cloud
-Storage bucket: **Settings → Generation → Create bucket** once (private, in your project,
-files deleted after a day), then pick 1080p. It costs about 1.5x 720p.
+    python launch.py --demo
 
-## Costs
-Every generation call logs its token usage and an estimated `cost_usd` to `log.jsonl`
-(prices live in `Settings.PRICES`). The app shows spend per film, an estimate on every
-button that spends money, and asks before anything over $1.
+Needs Python 3.11+, Node.js and ffmpeg. For real generation, put Google Cloud (Vertex AI) or Gemini API credentials in `.env`. Setup, every feature, the code map and tests are in the **[guide](docs/GUIDE.md)**.
 
-## Headless
-    python cli.py --story "..." --style "..."        # 9:16, 720p by default
-    python cli.py --story "..." --resolution 360p     # cheap test run
-    python cli.py --resume projects/<folder>          # finish an interrupted/failed run
+## Status
 
-## Code
-    pipeline.py   all generation logic (no UI)
-    influencers.py  influencer profiles, identity pack, scripts, extended reels
-    captions.py   script-based captions: timing, grouping, styles, ASS for burn-in
-    fontbook.py   caption fonts: bundled, uploaded, imported from Google Fonts
-    products.py   products for videos: photos, description, packshot
-    uploads.py    uploaded images, cleaned (no EXIF/location) until used
-    editor.py     trim, colour, audio (and captions) exported with ffmpeg
-    server.py     local API + background jobs over pipeline.py; serves the UI
-    web/          Next.js UI (exported to web/out, served by server.py)
-    launch.py     builds the UI when needed, starts the server, opens the browser
-    cli.py        headless runs
-
-UI development: run `python launch.py --no-browser`, then in `web/`:
-`set NEXT_PUBLIC_API=http://localhost:8765 && npm run dev` (hot reload on :3000).
-
-## Tests
-    pip install -r requirements-dev.txt
-    python -m pytest -q          # offline: a fake client stands in for the API, nothing is billed
-
-## Project folder
-    projects/<date>-<title>/
-      plan.json           production plan (also stores prompt overrides + chosen takes)
-      assets/*.png        reference sheets and environment plates
-      scenes/s01/take_01.mp4 + take_01.json   clip + exact prompt, refs, usage, cost
-      frames/             continuity frames and poster stills
-      log.jsonl           every generation call, in order, with cost
-      final.mp4
+A personal, local, single-user tool that I use to make videos. Next: voice matching through speech-to-speech conversion, and a hosted version.
