@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown, ClipboardCheck, RefreshCw, Wand2 } from "lucide-react";
+import { ChevronDown, ClipboardCheck, RefreshCw, Wrench } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge, Tip } from "@/components/ui/primitives";
 import { JobProgress } from "@/components/progress";
@@ -132,7 +132,7 @@ export function ReviewPanel({
 
       {r.fix_instruction && (
         <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2">
-          <Wand2 className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          <Wrench className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
           <p className="flex-1 text-xs">{r.fix_instruction}</p>
           <Button size="sm" variant="outline" shape="pill" className="h-7" onClick={() => onUseFix(r.fix_instruction)}>
             Use this fix

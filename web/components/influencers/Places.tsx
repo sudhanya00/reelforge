@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
-import { MapPin, Plus, RefreshCw, Trash2, TriangleAlert, Wand2 } from "lucide-react";
+import { MapPin, PaintBrush, Plus, RefreshCw, Trash2, TriangleAlert } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input, Label, LiveBars, Popover, PopoverContent, PopoverTrigger, Textarea, Tip } from "@/components/ui/primitives";
 import { useConfirm } from "@/components/confirm";
@@ -71,7 +71,7 @@ export function PlacesSection({ inf }: { inf: Influencer }) {
                     <MapPin className="size-6 text-muted-foreground/40" />
                   )}
                   <Button size="sm" variant="outline" shape="pill" onClick={() => repaint(p)} className="mt-1">
-                    <Wand2 />
+                    <PaintBrush />
                     Paint
                   </Button>
                 </div>
@@ -147,7 +147,7 @@ function AddPlace({ inf, onAdded }: { inf: Influencer; onAdded: () => void }) {
           <Textarea id="place-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A small concrete-floor gym: chalky squat racks, a mirrored wall, a fan in the corner, fluorescent light" />
         </div>
         <Button className="w-full" shape="pill" onClick={save} disabled={busy || !name.trim() || !description.trim()}>
-          <Wand2 />
+          <PaintBrush />
           Save and paint
           <span className="text-primary-foreground/70 tabular">{usd(imageUsd(state?.settings, 1))}</span>
         </Button>

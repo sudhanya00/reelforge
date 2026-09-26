@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ImagePlus, X } from "lucide-react";
+import { ImagePlus, X } from "@/components/icons";
 import { LiveBars } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";

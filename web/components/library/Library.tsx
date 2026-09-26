@@ -4,7 +4,7 @@ import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
-import { ArrowUp, Check, Clapperboard, Film, Minus, Palette, Plus, RectangleHorizontal, RectangleVertical, Sparkles, Trash2, UserPlus, Users, X } from "lucide-react";
+import { ArrowUp, Check, Clapperboard, FastForward, Film, Minus, Palette, Plus, RectangleHorizontal, RectangleVertical, Trash2, UserPlus, Users, X } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge, Kbd, LiveBars, Meter, Popover, PopoverContent, PopoverTrigger, Segmented, Tip } from "@/components/ui/primitives";
 import { useConfirmSpend } from "@/components/confirm";
@@ -117,7 +117,7 @@ function Composer() {
   return (
     <div className="mx-auto max-w-2xl">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="text-center">
-        <h1 className="text-4xl font-semibold tracking-tight text-balance">What&apos;s the story?</h1>
+        <h1 className="font-display text-5xl tracking-tight text-balance">What&apos;s the story?</h1>
         <p className="mt-3 text-balance text-muted-foreground">
           Describe an idea. ReelForge plans it, paints the cast and locations, shoots every scene and cuts the film — with a checkpoint at each step.
         </p>
@@ -215,7 +215,7 @@ function Composer() {
           <div className="ml-auto flex items-center gap-2">
             <Tip content={<>Plans, then makes every reference and scene with no checkpoints. About {usd(filmUsd)} at {s?.resolution}.</>}>
               <Button variant="ghost" size="sm" shape="pill" disabled={!story.trim() || submitting} onClick={() => submit(true)}>
-                <Sparkles />
+                <FastForward />
                 Make it all
               </Button>
             </Tip>

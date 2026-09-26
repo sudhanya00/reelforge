@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { motion } from "motion/react";
-import { Expand, PenLine, RefreshCw, RotateCcw, Trash2, TriangleAlert, UserRound, Wand2 } from "lucide-react";
+import { Expand, PaintBrush, PenLine, RefreshCw, RotateCcw, Trash2, TriangleAlert, UserRound } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge, Dialog, DialogContent, DialogTitle, LiveBars, Popover, PopoverContent, PopoverTrigger, Spinner, Textarea, Tip } from "@/components/ui/primitives";
 import { useConfirm, useConfirmSpend } from "@/components/confirm";
@@ -103,7 +103,7 @@ function IdentityTab({ inf }: { inf: Influencer }) {
             {inf.face ? <img src={url(inf.face)} alt="" className="size-full object-cover" /> : <UserRound className="m-4 size-8 text-muted-foreground/50" />}
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold tracking-tight">{p.name}</h1>
+            <h1 className="truncate font-display text-3xl leading-tight">{p.name}</h1>
             <p className="truncate text-sm text-muted-foreground">{[p.handle, p.niche].filter(Boolean).join(" · ")}</p>
           </div>
         </div>
@@ -155,7 +155,7 @@ function IdentityTab({ inf }: { inf: Influencer }) {
             </div>
           ) : missing.length ? (
             <Button shape="pill" onClick={() => paint()}>
-              <Wand2 />
+              <PaintBrush />
               Paint {missing.length === inf.identity.length ? "the identity pack" : `${missing.length} missing`}
               <span className="text-primary-foreground/70 tabular">{usd(imageUsd(state?.settings, missing.length))}</span>
             </Button>
@@ -258,7 +258,7 @@ function IdentityCard({
             )}
             {canPaint && (
               <Button size="sm" variant="outline" shape="pill" onClick={onPaint} className="mt-1">
-                <Wand2 />
+                <PaintBrush />
                 Paint
               </Button>
             )}

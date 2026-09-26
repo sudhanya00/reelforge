@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Coins, Trash2 } from "lucide-react";
+import { Coins, Trash2 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/primitives";
 import { usd } from "@/lib/utils";

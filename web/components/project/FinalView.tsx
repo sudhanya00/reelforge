@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, Film, FolderOpen, SlidersHorizontal, TriangleAlert } from "lucide-react";
+import { Download, Film, FolderOpen, SlidersHorizontal, TriangleAlert } from "@/components/icons";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { EditDialog } from "@/components/editor/EditDialog";

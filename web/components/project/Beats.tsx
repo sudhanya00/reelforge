@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronDown, Clapperboard, Pause, Plus, Scissors, ShieldCheck, Trash2 } from "lucide-react";
+import { ChevronDown, Clapperboard, Pause, Plus, Scissors, ShieldCheck, Trash2 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge, InlineText, Tip } from "@/components/ui/primitives";
 import { JobProgress } from "@/components/progress";

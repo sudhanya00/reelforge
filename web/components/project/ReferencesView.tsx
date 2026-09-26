@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "motion/react";
-import { BookmarkCheck, BookmarkPlus, Expand, ImageOff, Link2, PenLine, RefreshCw, RotateCcw, TriangleAlert, Wand2 } from "lucide-react";
+import { BookmarkCheck, BookmarkPlus, Expand, ImageOff, Link2, PaintBrush, PenLine, RefreshCw, RotateCcw, TriangleAlert } from "@/components/icons";
 import { useSWRConfig } from "swr";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -99,7 +99,7 @@ function AssetCard({ a, p, index, uses, onPrompt, onView }: { a: Asset; p: Proje
               <ImageOff className="size-5 text-muted-foreground/60" />
             )}
             <Button size="sm" shape="pill" variant={a.error ? "outline" : "default"} onClick={() => act.paint(a.id)}>
-              {a.error ? <RefreshCw /> : <Wand2 />}
+              {a.error ? <RefreshCw /> : <PaintBrush />}
               {a.error ? "Try again" : "Paint"}
               <span className="text-xs font-normal opacity-60">≈{usd(price)}</span>
             </Button>
@@ -224,7 +224,7 @@ function PromptSheet({ p, asset, onClose }: { p: Project; asset: Asset | null; o
               Save
             </Button>
             <Button size="sm" shape="pill" onClick={() => save(true)}>
-              <Wand2 />
+              <PaintBrush />
               {changed ? "Save & paint" : "Paint again"}
               <span className="text-xs font-normal opacity-60">≈{usd(act.settings?.prices.image)}</span>
             </Button>

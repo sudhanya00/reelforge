@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Braces, Clapperboard, Mic, MapPin, Package, Palette, Plus, Trash2, Users } from "lucide-react";
+import { Braces, Clapperboard, MapPin, Mic, Package, Palette, Plus, Trash2, Users } from "@/components/icons";
 import { Badge, InlineText, Segmented, Textarea, Tip } from "@/components/ui/primitives";
 import type { Beat, Pacing, Plan, PlanScene, Project } from "@/lib/api";
 import { useAppState } from "@/lib/hooks";

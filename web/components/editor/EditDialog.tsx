@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Captions, Pause, Play, RotateCcw, Scissors, SlidersHorizontal, SunMedium, Volume2 } from "lucide-react";
+import { Captions, Pause, Play, RotateCcw, Scissors, SlidersHorizontal, SunMedium, Volume2 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Label, Segmented } from "@/components/ui/primitives";
 import { useCaptionFonts, type CaptionCatalog, type CaptionState, type CaptionStyle } from "@/lib/captions";

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowUp, ChevronDown, Clapperboard, Link2, Plus, RefreshCw, RotateCcw, TriangleAlert, Wand2 } from "lucide-react";
+import { ArrowUp, ChevronDown, Clapperboard, Link2, Plus, RefreshCw, RotateCcw, TriangleAlert, Wrench } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge, LiveBars, Segmented, Spinner, Textarea, Tip } from "@/components/ui/primitives";
 import { providerInfo, useJobs, videoUsd } from "@/lib/hooks";
@@ -352,7 +352,7 @@ function FixComposer({ p, sc, take, text, setText }: { p: Project; sc: Scene; ta
   return (
     <div className="mt-auto space-y-1.5">
       <div className="flex items-center gap-2 rounded-full border bg-background py-1 pr-1 pl-4 transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30">
-        <Wand2 className="size-4 shrink-0 text-muted-foreground" />
+        <Wrench className="size-4 shrink-0 text-muted-foreground" />
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}

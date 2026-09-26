@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowRight, Clapperboard, FolderOpen, Trash2, RectangleHorizontal, RectangleVertical, Scissors, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, Clapperboard, FastForward, FolderOpen, PaintBrush, RectangleHorizontal, RectangleVertical, Scissors, Trash2 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge, Kbd, LiveBars, Spinner, Tip } from "@/components/ui/primitives";
 import { useRoute, type Tab } from "@/components/shell";
@@ -156,7 +156,7 @@ function ActionBar({ p, tab, draft, setDraft }: { p: Project; tab: Tab; draft: P
   } else if (tab === "plan" || tab === "references") {
     primary = a.missingRefs.length ? (
       <Button size="sm" shape="pill" onClick={a.paintMissing} disabled={busyAll}>
-        <Wand2 />
+        <PaintBrush />
         Paint {plural(a.missingRefs.length, "reference")}
         <Cost usd={a.settings ? a.settings.prices.image * a.missingRefs.length : 0} />
       </Button>
@@ -169,7 +169,7 @@ function ActionBar({ p, tab, draft, setDraft }: { p: Project; tab: Tab; draft: P
   } else if (tab === "scenes" || (tab === "final" && !allShot)) {
     primary = a.missingScenes.length || a.missingRefs.length ? (
       <Button size="sm" shape="pill" onClick={a.produce} disabled={busyAll || mine.length > 0}>
-        <Sparkles />
+        <FastForward />
         Make everything missing
         <Cost usd={a.remainingUsd} />
       </Button>

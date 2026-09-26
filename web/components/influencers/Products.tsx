@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
-import { Package, Plus, RefreshCw, Shirt, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
+import { Package, Plus, RefreshCw, Scan, Shirt, Trash2, TriangleAlert, X } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Input, Label, LiveBars, Popover, PopoverContent, PopoverTrigger, Segmented, Textarea, Tip } from "@/components/ui/primitives";
 import { useConfirm } from "@/components/confirm";
@@ -220,7 +220,7 @@ export function ProductDialog({
             <div className="flex items-center">
               <Label>What it looks like</Label>
               <Button size="sm" variant="ghost" shape="pill" className="-my-1 ml-auto h-7 text-xs" onClick={describe} disabled={!canDescribe || !!describing}>
-                {describing ? <LiveBars className="h-3" /> : <Sparkles />}
+                {describing ? <LiveBars className="h-3" /> : <Scan />}
                 Fill from photos
               </Button>
             </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AudioLines, Bookmark, Check, Clock, TriangleAlert, X } from "lucide-react";
+import { AudioLines, Bookmark, Check, Clock, TriangleAlert, X } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input, Label, LiveBars, Segmented, Tip } from "@/components/ui/primitives";
 import { chunk, editChunk, type Animation, type CaptionCatalog, type CaptionState, type CaptionStyle } from "@/lib/captions";

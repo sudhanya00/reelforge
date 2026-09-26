@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
-import { ArrowRight, Camera, LayoutGrid, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Camera, Eyedropper, LayoutGrid, Lightbulb, PencilRuler, ScanSmiley, ShieldCheck } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Input, Label, LiveBars, Textarea } from "@/components/ui/primitives";
 import { JobProgress } from "@/components/progress";
@@ -208,7 +208,7 @@ export function Designer({
             {id ? "Changes apply to new videos. If you change their look, repaint the identity pack." : "Fill in what you care about. AI completes the rest in the same spirit."}
           </DialogDescription>
           <div className="mt-4 flex items-center gap-2 rounded-xl border bg-card p-1.5 pl-3.5 focus-within:ring-[3px] focus-within:ring-ring/30">
-            <Sparkles className="size-4 shrink-0 text-muted-foreground" />
+            <Lightbulb className="size-4 shrink-0 text-muted-foreground" />
             <input
               value={concept}
               onChange={(e) => setConcept(e.target.value)}
@@ -217,7 +217,7 @@ export function Designer({
               className="h-8 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
             />
             <Button size="sm" shape="pill" variant="secondary" onClick={fill} disabled={filling || !empty.length}>
-              {filling ? <LiveBars /> : <Sparkles />}
+              {filling ? <LiveBars /> : <PencilRuler />}
               {empty.length === Object.keys(profile).length ? "Design it" : empty.length ? `Fill ${empty.length} empty` : "All filled"}
             </Button>
           </div>
@@ -239,7 +239,7 @@ export function Designer({
                 <div className="mt-4 space-y-3">
                   <PhotoDrop photos={board} onChange={setBoard} max={8} hint="Up to 8: people whose type you like, outfits, makeup, aesthetics. Mixing several gives a clearer type." />
                   <Button size="sm" variant="secondary" shape="pill" onClick={readBoard} disabled={!board.length || !!readingBoard}>
-                    {readingBoard ? <LiveBars /> : <Sparkles />}
+                    {readingBoard ? <LiveBars /> : <Eyedropper />}
                     Read the type
                   </Button>
                   <p className="text-[11px] text-muted-foreground">
@@ -267,7 +267,7 @@ export function Designer({
                     <span>{CONSENT}</span>
                   </label>
                   <Button size="sm" variant="secondary" shape="pill" onClick={readPhotos} disabled={!photos.length || !!reading}>
-                    {reading ? <LiveBars /> : <Sparkles />}
+                    {reading ? <LiveBars /> : <ScanSmiley />}
                     Describe their look from the photos
                   </Button>
                   <p className="text-[11px] text-muted-foreground">Fills hair, skin, build, features and style. Name, age, gender and background are yours to write. Video models may refuse well-known faces.</p>

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { CheckCircle2, CircleAlert, PlugZap, RectangleHorizontal, RectangleVertical } from "lucide-react";
+import { CheckCircle2, CircleAlert, PlugZap, RectangleHorizontal, RectangleVertical } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger, Input, Label, Segmented, Spinner } from "@/components/ui/primitives";
 import { providerInfo, resolutionFor, useAppState, videoUsd } from "@/lib/hooks";

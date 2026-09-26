@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Sparkles, UserRound, Video as VideoIcon } from "lucide-react";
+import { Plus, UserRound, Video as VideoIcon } from "@/components/icons";
 import { Badge, LiveBars, Meter } from "@/components/ui/primitives";
 import { useRoute } from "@/components/shell";
 import { useInfluencers } from "@/lib/hooks";
@@ -19,7 +19,7 @@ export function Influencers() {
   return (
     <div className="mx-auto w-full max-w-[1200px] px-6 pt-16 pb-24">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mx-auto max-w-2xl text-center">
-        <h1 className="text-4xl font-semibold tracking-tight text-balance">Your creators</h1>
+        <h1 className="font-display text-5xl tracking-tight text-balance">Your creators</h1>
         <p className="mt-3 text-balance text-muted-foreground">
           Design a creator once, from scratch or from photos: their look, personality and voice. Then make videos in any format and place, wearing or holding your products, while they always look and sound like themselves.
         </p>
@@ -37,7 +37,6 @@ export function Influencers() {
           </span>
           <span className="text-sm font-medium">Design an influencer</span>
           <span className="flex items-center gap-1 text-xs">
-            <Sparkles className="size-3" />
             AI fills in whatever you skip
           </span>
         </motion.button>

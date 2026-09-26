@@ -6,7 +6,7 @@ import { ThemeProvider, useTheme } from "next-themes";
 import { SWRConfig } from "swr";
 import { Toaster } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
-import { Activity, Check, ChevronRight, Clapperboard, Film, Moon, Settings2, Sun, TriangleAlert, UserRound } from "lucide-react";
+import { Activity, Check, ChevronRight, Clapperboard, Film, Moon, Settings2, Sun, TriangleAlert, UserRound } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge, LiveBars, Popover, PopoverContent, PopoverTrigger, Segmented, Spinner, Tip, TooltipProvider } from "@/components/ui/primitives";
 import { ConfirmSpendProvider } from "@/components/confirm";
@@ -135,7 +135,7 @@ export function Nav() {
           <span className="flex size-7 items-center justify-center rounded-lg bg-foreground text-background transition-transform group-hover:-rotate-6">
             <Clapperboard className="size-4" />
           </span>
-          <span className="text-[15px] font-semibold tracking-tight">ReelForge</span>
+          <span className="font-display text-[21px] leading-none">ReelForge</span>
         </button>
 
         {project && p && (

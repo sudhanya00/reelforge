@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { motion, AnimatePresence } from "motion/react";
-import { Armchair, ArrowUp, Check, Copy, DoorOpen, Download, Footprints, SlidersHorizontal, ImageIcon, Info, MapPin, Megaphone, Mic, Plus, RefreshCw, Shirt, Smartphone, Sparkles, Trash2, TriangleAlert, Video as VideoIcon, Wand2, X } from "lucide-react";
+import { Armchair, ArrowUp, Check, Copy, DoorOpen, Download, FilmSlate, Footprints, ImageIcon, Info, MapPin, Megaphone, Mic, PaintBrush, Plus, RefreshCw, Shirt, Shuffle, SlidersHorizontal, Smartphone, Trash2, TriangleAlert, X, Video as VideoIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge, InlineText, Input, Label, LiveBars, Segmented, Spinner, Textarea, Tip } from "@/components/ui/primitives";
 import { useConfirm, useConfirmSpend } from "@/components/confirm";
@@ -99,7 +99,7 @@ function WherePicker({
       <div className="flex flex-wrap gap-1.5">
         {allowAuto && (
           <button disabled={disabled} className={chip(place === null)} onClick={() => onChange(null, "")}>
-            <Sparkles className="size-3" />
+            <Shuffle className="size-3" />
             AI picks
           </button>
         )}
@@ -238,7 +238,7 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
 
   return (
     <div className="mx-auto max-w-2xl pt-6">
-      <h2 className="text-2xl font-semibold tracking-tight">What should {p.name} post?</h2>
+      <h2 className="font-display text-4xl tracking-tight">What should {p.name} post?</h2>
       <p className="mt-2 text-sm text-muted-foreground">
         Pick how it&apos;s filmed and what it&apos;s about. AI drafts the script in their voice and sets the scene (where, what they wear); you edit both before anything is shot.
       </p>
@@ -763,7 +763,7 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
             </div>
           )}
           <Button className="w-full" shape="pill" onClick={shoot} disabled={!hasFace || !v.segments.length || !!painting}>
-            <Wand2 />
+            <FilmSlate />
             {v.final ? "Shoot again" : "Shoot"}
             <span className="text-primary-foreground/70 tabular">{usd(est.usd)}</span>
           </Button>
@@ -827,7 +827,7 @@ function Openings({ v, busy, disabled, onPaint }: { v: Video; busy: boolean; dis
         <span className="font-medium">Opening frame</span>
         {any && !v.opening_ok && <Badge tone="live">setup changed</Badge>}
         <Button variant="ghost" size="sm" shape="pill" className="-my-1 ml-auto h-7 text-xs" onClick={onPaint} disabled={busy || disabled}>
-          {any ? <RefreshCw /> : <Wand2 />}
+          {any ? <RefreshCw /> : <PaintBrush />}
           {any ? "Repaint" : "Paint"}
           {!v.opening_ok && <span className="tabular text-muted-foreground">{usd(v.estimate.images_usd)}</span>}
         </Button>

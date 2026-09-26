@@ -3,7 +3,7 @@
 import * as React from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Plus, Search, Upload } from "lucide-react";
+import { Plus, Search, Upload } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Input, LiveBars, Popover, PopoverContent, PopoverTrigger, Segmented } from "@/components/ui/primitives";
 import { api, fetcher } from "@/lib/api";
