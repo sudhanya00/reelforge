@@ -224,7 +224,7 @@ export interface Project {
 export interface Job {
   id: string;
   kind: "plan" | "film" | "assets" | "take" | "edit" | "produce" | "stitch" | "review" | "direct"
-    | "design" | "identity" | "script" | "reel" | "place" | "opening" | "export" | "sync";
+    | "design" | "identity" | "script" | "reel" | "place" | "opening" | "export" | "sync" | "describe" | "product";
   label: string;
   project: string | null;
   claims: string[];
@@ -314,12 +314,29 @@ export interface EditState {
   duration_s: number | null;
 }
 
+export type ProductUse = "wear" | "hold";
+
 export interface Setup {
   place: string;
   location: string;
   outfit: string;
   position: string;
   light: string;
+  products: { id: string; use: ProductUse }[];
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  brand: string;
+  kind: string;
+  description: string;
+  notes: string;
+  use: ProductUse;
+  packshot: string | null;
+  photos: string[];
+  status: "generating" | "done" | "missing";
+  error: string | null;
 }
 
 export interface Place {
@@ -347,6 +364,7 @@ export interface Video extends VideoSummary {
   error: string | null;
   costs: { usd: number; calls: number };
   setup: Setup;
+  featured: { id: string; name: string; brand: string; use: ProductUse; image: string }[];
   edit: EditState | null;
   captions: CaptionState;
   opening: { opening?: string | null; look?: string | null };
@@ -359,6 +377,8 @@ export interface Influencer extends InfluencerSummary {
   identity: IdentityImage[];
   identity_usd: number;
   places: Place[];
+  sources: { name: string; url: string }[];
+  consent: { text: string; at: number } | null;
   videos: VideoSummary[];
 }
 
@@ -420,14 +440,29 @@ export const api = {
   deleteCharacter: (id: string) => call<{ ok: boolean }>("DELETE", `/api/library/characters/${id}`),
   designInfluencer: (profile: Partial<Profile>, concept: string) =>
     call<Job>("POST", "/api/influencers/design", { profile, concept }),
-  createInfluencer: (profile: Partial<Profile>) => call<Influencer>("POST", "/api/influencers", { profile }),
+  createInfluencer: (profile: Partial<Profile>, sources: string[] = [], consent = "") =>
+    call<Influencer>("POST", "/api/influencers", { profile, sources, consent }),
+  addSources: (id: string, tokens: string[]) => call<Influencer>("POST", `/api/influencers/${id}/sources`, { tokens }),
+  deleteSource: (id: string, name: string) => call<Influencer>("DELETE", `/api/influencers/${id}/sources/${name}`),
+  uploadImage: async (file: Blob) => {
+    const res = await fetch(`${API}/api/uploads`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+    if (!res.ok) throw new ApiError((await res.json().catch(() => ({}))).detail ?? `${res.status}`);
+    return ((await res.json()) as { token: string }).token;
+  },
+  describePhotos: (what: "person" | "product", tokens: string[], product?: string) =>
+    call<Job>("POST", "/api/describe", { what, tokens, product: product ?? null }),
+  createProduct: (b: Partial<Omit<Product, "photos">> & { photos: string[] }) =>
+    call<{ product: Product; job: Job }>("POST", "/api/products", b),
+  updateProduct: (id: string, b: Partial<Product>) => call<Product>("PUT", `/api/products/${id}`, { ...b, photos: [] }),
+  repaintPackshot: (id: string) => call<Job>("POST", `/api/products/${id}/packshot`),
+  deleteProduct: (id: string) => call<{ ok: boolean }>("DELETE", `/api/products/${id}`),
   saveInfluencer: (id: string, profile: Partial<Profile>) => call<Influencer>("PUT", `/api/influencers/${id}`, { profile }),
   deleteInfluencer: (id: string) => call<{ ok: boolean }>("DELETE", `/api/influencers/${id}`),
   paintIdentity: (id: string, views?: IdentityView[], force = false) =>
     call<Job>("POST", `/api/influencers/${id}/identity`, { views: views ?? null, force }),
   setIdentityPrompt: (id: string, view: IdentityView, prompt: string | null) =>
     call<Influencer>("PUT", `/api/influencers/${id}/identity/prompt`, { view, prompt }),
-  newVideo: (id: string, b: { format: string; topic: string; points: string; length_s: number; place: string; location: string; outfit: string }) =>
+  newVideo: (id: string, b: { format: string; topic: string; points: string; length_s: number; place: string; location: string; outfit: string; products: Setup["products"] }) =>
     call<Job>("POST", `/api/influencers/${id}/videos`, b),
   saveScript: (id: string, vid: string, b: { title?: string; caption?: string; segments?: Partial<Segment>[]; format?: string; setup?: Partial<Setup> }) =>
     call<Video>("PUT", `/api/influencers/${id}/videos/${vid}`, b),

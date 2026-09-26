@@ -9,6 +9,7 @@ import { useInfluencers } from "@/lib/hooks";
 import { url, type InfluencerSummary } from "@/lib/api";
 import { usd } from "@/lib/utils";
 import { Designer } from "./Designer";
+import { ProductsSection } from "./Products";
 
 export function Influencers() {
   const { data } = useInfluencers();
@@ -20,7 +21,7 @@ export function Influencers() {
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mx-auto max-w-2xl text-center">
         <h1 className="text-4xl font-semibold tracking-tight text-balance">Your creators</h1>
         <p className="mt-3 text-balance text-muted-foreground">
-          Design a fictional creator once: their look, personality, voice and the room they film in. Then make selfie-style talking-head videos where they always look and sound like themselves.
+          Design a creator once, from scratch or from photos: their look, personality and voice. Then make videos in any format and place, wearing or holding your products, while they always look and sound like themselves.
         </p>
       </motion.div>
 
@@ -50,6 +51,8 @@ export function Influencers() {
       {data && data.design_usd > 0 && (
         <p className="mt-8 text-center text-xs text-muted-foreground tabular">{usd(data.design_usd)} spent on AI design suggestions</p>
       )}
+
+      <ProductsSection />
 
       <Designer open={designing} onOpenChange={setDesigning} />
     </div>

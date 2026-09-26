@@ -58,6 +58,14 @@ home); AI fills whatever you leave empty. Paint their **identity pack** (face fi
 three-quarter, profile, full body and home, all raw and unretouched) and add **places**
 they film in more than once (gym, café, car...).
 
+A creator can also be made **from photos** of a real person (yourself, or someone who agreed;
+a consent statement is stored with them): every identity view is painted from the photos. The
+voice is still Omni's, from the description: Omni takes no audio references, so it can't clone one.
+
+**Products** (Influencers page): add photos of a real item, AI fills in what it looks like, and a
+clean product shot is painted. Feature up to two in a video, worn or held: the script uses only
+the facts you give, the opening frame shows the exact item, and Omni keeps it through the take.
+
 Each video has its own **setup**: a format (selfie talking head, propped-up phone, walk and
 talk, mirror, walk into frame, podcast), where, what they wear, their position and the light.
 AI proposes it with the script, in their voice, split into 10 s segments; you edit both.
@@ -98,6 +106,8 @@ button that spends money, and asks before anything over $1.
     influencers.py  influencer profiles, identity pack, scripts, extended reels
     captions.py   script-based captions: timing, grouping, styles, ASS for burn-in
     fontbook.py   caption fonts: bundled, uploaded, imported from Google Fonts
+    products.py   products for videos: photos, description, packshot
+    uploads.py    uploaded images, cleaned (no EXIF/location) until used
     editor.py     trim, colour, audio (and captions) exported with ffmpeg
     server.py     local API + background jobs over pipeline.py; serves the UI
     web/          Next.js UI (exported to web/out, served by server.py)

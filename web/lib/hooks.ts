@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { fetcher, type AppState, type Influencer, type InfluencerList, type Job, type LibraryCharacter, type Video, type Project, type ProjectSummary, type ProviderInfo, type Resolution, type Settings } from "./api";
+import { fetcher, type AppState, type Influencer, type InfluencerList, type Job, type LibraryCharacter, type Product, type Video, type Project, type ProjectSummary, type ProviderInfo, type Resolution, type Settings } from "./api";
 
 export function useAppState() {
   return useSWR<AppState>("/api/state", fetcher, { revalidateOnFocus: true });
@@ -44,6 +44,26 @@ export function useInfluencers() {
   return useSWR<InfluencerList>("/api/influencers", fetcher, {
     refreshInterval: running.some((j) => j.project?.startsWith("inf:")) ? 2500 : 0,
   });
+}
+
+export function useProducts() {
+  const { running } = useJobs();
+  return useSWR<{ products: Product[]; kinds: string[] }>("/api/products", fetcher, {
+    refreshInterval: running.some((j) => j.project === "products") ? 1500 : 0,
+  });
+}
+
+/** Wait for a job and get its result (for jobs a dialog starts and reads, like "describe"). */
+export function useJobResult(jobId: string | null, onDone: (j: Job) => void) {
+  const { jobs } = useJobs();
+  const done = useRef<string | null>(null);
+  useEffect(() => {
+    const j = jobs.find((x) => x.id === jobId);
+    if (!j || j.status === "running" || done.current === j.id) return;
+    done.current = j.id;
+    onDone(j);
+  }, [jobs, jobId, onDone]);
+  return jobs.find((x) => x.id === jobId);
 }
 
 export function useInfluencer(id: string | null) {
@@ -90,6 +110,12 @@ export function useJobWatcher(
       seen.current.set(j.id, j.status);
       if (first.current || before !== "running" || j.status === "running") continue;
 
+      if (j.kind === "describe") continue; // the dialog that asked shows it
+      if (j.project === "products") {
+        mutate("/api/products");
+        if (j.status === "failed") toast.error(j.label + " failed", { description: j.error ?? undefined, duration: 12000 });
+        continue;
+      }
       if (j.project?.startsWith("inf:") || j.kind === "design") {
         mutate((key) => typeof key === "string" && key.startsWith("/api/influencers"));
         if (j.kind === "design") continue; // the designer shows its own result

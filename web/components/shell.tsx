@@ -288,7 +288,8 @@ function JobsButton() {
   const { jobs, running } = useJobs();
   const { go, goInf } = useRoute();
   const open = (j: Job) => {
-    if (j.project?.startsWith("inf:"))
+    if (j.project === "products") goInf(null);
+    else if (j.project?.startsWith("inf:"))
       goInf(j.project.slice(4), j.kind === "identity" || j.kind === "place" ? "identity" : "videos", ["reel", "opening", "export"].includes(j.kind) ? j.claims[0] : undefined);
     else if (j.project) go(j.project, tabFor(j));
   };
@@ -343,7 +344,7 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{job.label}</span>
           <span className="block truncate text-xs text-muted-foreground">
-            {job.project?.startsWith("inf:") ? job.project.slice(4) : (job.project ?? (job.kind === "design" ? "new influencer" : "new film"))} · {job.status === "running" ? clock(elapsed) : `${clock(elapsed)} · ${ago(job.finished ?? job.started)}`}
+            {job.project?.startsWith("inf:") ? job.project.slice(4) : (job.project ?? (job.kind === "design" || job.kind === "describe" ? "influencers" : "new film"))} · {job.status === "running" ? clock(elapsed) : `${clock(elapsed)} · ${ago(job.finished ?? job.started)}`}
           </span>
         </span>
         {job.project && (

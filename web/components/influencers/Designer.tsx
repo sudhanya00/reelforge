@@ -3,13 +3,17 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
-import { ArrowRight, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Camera, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Input, Label, LiveBars, Textarea } from "@/components/ui/primitives";
 import { JobProgress } from "@/components/progress";
 import { useRoute } from "@/components/shell";
-import { imageUsd, useAppState, useJobs } from "@/lib/hooks";
-import { api, type Profile, type ProfileKey } from "@/lib/api";
+import { imageUsd, useAppState, useJobResult, useJobs } from "@/lib/hooks";
+import { api, type Job, type Profile, type ProfileKey } from "@/lib/api";
+import { PhotoDrop, type Photo } from "./PhotoDrop";
+
+const CONSENT = "These are photos of me, or of someone who agreed to be made into an AI character. They are not a celebrity or public figure.";
+const FROM_PHOTOS: ProfileKey[] = ["hair", "skin", "body", "features", "style", "outfit"];
 import { cn, usd } from "@/lib/utils";
 
 type Field = { key: ProfileKey; label: string; placeholder: string; picks?: string[]; long?: boolean };
@@ -86,6 +90,30 @@ export function Designer({
   const [concept, setConcept] = React.useState("");
   const [jobId, setJobId] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
+  const [fromPhotos, setFromPhotos] = React.useState(false);
+  const [photos, setPhotos] = React.useState<Photo[]>([]);
+  const [consent, setConsent] = React.useState(false);
+  const [reading, setReading] = React.useState<string | null>(null);
+  const onRead = React.useCallback((j: Job) => {
+    setReading(null);
+    if (j.status !== "done") return void toast.error("Couldn't read the photos", { description: j.error ?? undefined });
+    const got = (j.result?.fields ?? {}) as Partial<Profile>;
+    setProfile((p) => {
+      const next = { ...p };
+      for (const k of FROM_PHOTOS) if (got[k]) next[k] = got[k]!;
+      return next;
+    });
+  }, []);
+  useJobResult(reading, onRead);
+  const readPhotos = async () => {
+    try {
+      const j = await api.describePhotos("person", photos.map((x) => x.token));
+      setReading(j.id);
+      mutate("/api/jobs");
+    } catch (e) {
+      toast.error("Couldn't start", { description: (e as Error).message });
+    }
+  };
   const job = jobs.find((j) => j.id === jobId);
   const filling = !!jobId && (!job || job.status === "running");
 
@@ -132,7 +160,9 @@ export function Designer({
         toast.success("Profile saved", lookChanged ? { description: "Their look changed: repaint the identity pack so videos match." } : undefined);
         onOpenChange(false);
       } else {
-        const inf = await api.createInfluencer(profile);
+        const inf = fromPhotos && photos.length
+          ? await api.createInfluencer(profile, photos.map((x) => x.token), consent ? CONSENT : "")
+          : await api.createInfluencer(profile);
         mutate("/api/influencers");
         onOpenChange(false);
         goInf(inf.id, "identity");
@@ -169,6 +199,32 @@ export function Designer({
         </div>
 
         <div className="min-h-0 flex-1 space-y-7 overflow-y-auto px-6 py-6 scrollbar-thin">
+          {!id && (
+            <section className="rounded-xl border p-4">
+              <label className="flex cursor-pointer items-center gap-3">
+                <Camera className="size-4 text-muted-foreground" />
+                <span className="flex-1">
+                  <span className="block text-sm font-semibold">Start from photos of a real person</span>
+                  <span className="block text-xs text-muted-foreground">Yourself, or someone who agreed. Their face and body; the voice is still described in words.</span>
+                </span>
+                <input type="checkbox" checked={fromPhotos} onChange={(e) => setFromPhotos(e.target.checked)} className="size-4 accent-foreground" />
+              </label>
+              {fromPhotos && (
+                <div className="mt-4 space-y-3">
+                  <PhotoDrop photos={photos} onChange={setPhotos} max={6} hint="2-6 photos: a clear front face, a three-quarter view, and one full length. Good light, no filters, no sunglasses." />
+                  <label className="flex cursor-pointer items-start gap-2 text-xs">
+                    <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 size-4 accent-foreground" />
+                    <span>{CONSENT}</span>
+                  </label>
+                  <Button size="sm" variant="secondary" shape="pill" onClick={readPhotos} disabled={!photos.length || !!reading}>
+                    {reading ? <LiveBars /> : <Sparkles />}
+                    Describe their look from the photos
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">Fills hair, skin, build, features and style. Name, age, gender and background are yours to write. Video models may refuse well-known faces.</p>
+                </div>
+              )}
+            </section>
+          )}
           {SECTIONS.map((sec) => (
             <section key={sec.title}>
               <div className="mb-3 flex items-baseline gap-2">
@@ -211,13 +267,13 @@ export function Designer({
           <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
             <ShieldCheck className="size-3.5 shrink-0" />
             <span className="truncate">
-              Fictional people only.{!id && ` Next: their identity pack, 5 photos ≈ ${usd(imageUsd(state?.settings, 5))}.`}
+              {fromPhotos ? "Only people who agreed." : "Fictional people only."}{!id && ` Next: their identity pack, 5 photos ≈ ${usd(imageUsd(state?.settings, 5))}.`}
             </span>
           </p>
           <Button variant="ghost" shape="pill" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button shape="pill" onClick={save} disabled={saving || filling || !profile.name.trim()}>
+          <Button shape="pill" onClick={save} disabled={saving || filling || !profile.name.trim() || (fromPhotos && (!photos.length || !consent))}>
             {id ? "Save profile" : "Create"}
             {!id && <ArrowRight />}
           </Button>

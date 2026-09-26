@@ -14,6 +14,7 @@ import { infKey, useAppState, useInfluencers, useJobs, useVideo } from "@/lib/ho
 import { api, url, type Format, type Influencer, type Job, type Resolution, type Segment, type Setup, type Video, type VideoSummary } from "@/lib/api";
 import { ago, cn, usd } from "@/lib/utils";
 import { EditDialog } from "@/components/editor/EditDialog";
+import { ProductPicker } from "./Products";
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import type { CaptionCatalog, CaptionState, CaptionStyle } from "@/lib/captions";
@@ -201,6 +202,7 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
   const [place, setPlace] = React.useState<string | null>(null);      // null: AI picks
   const [location, setLocation] = React.useState("");
   const [outfit, setOutfit] = React.useState("");
+  const [featured, setFeatured] = React.useState<Setup["products"]>([]);
   const [submitting, setSubmitting] = React.useState(false);
   const [jobId, setJobId] = React.useState<string | null>(null);
   const { jobs } = useJobs();
@@ -221,7 +223,7 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
     try {
       const j = await api.newVideo(inf.id, {
         format, topic, points, length_s: length,
-        place: place ?? "", location: place === "" ? location : "", outfit,
+        place: place ?? "", location: place === "" ? location : "", outfit, products: featured,
       });
       setJobId(j.id);
       mutate("/api/jobs");
@@ -281,6 +283,10 @@ function NewVideo({ inf, busy }: { inf: Influencer; busy: boolean }) {
                 </Tip>
               )}
             </div>
+          </div>
+          <div className="grid gap-1.5 sm:grid-cols-[80px_1fr] sm:items-center">
+            <Label>Featuring</Label>
+            <ProductPicker value={featured} onChange={setFeatured} />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t px-3 py-3">
@@ -416,6 +422,15 @@ function SetupCard({ inf, draft, setDraft, locked }: { inf: Influencer; draft: D
         <div className="space-y-1.5 sm:col-span-2">
           <Label>Wearing</Label>
           <Input value={draft.setup.outfit} disabled={locked} onChange={(e) => set({ outfit: e.target.value })} placeholder="e.g. black satin slip dress, silver hoops" className="h-8" />
+        </div>
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label>Featuring</Label>
+          <ProductPicker value={draft.setup.products ?? []} onChange={(products) => set({ products })} disabled={locked} />
+          {(draft.setup.products ?? []).length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              In the opening frame and kept by the video model. Small printed text and logos can still blur when the product moves.
+            </p>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label>Position</Label>

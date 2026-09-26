@@ -59,8 +59,13 @@ consistent. Never base them on a real person or celebrity.
 
 
 def look_text(p: dict) -> str:
-    return (f"{p['age']}-year-old {p['ethnicity']} {p['gender']}. Skin: {dot(p['skin'])} "
-            f"Hair: {dot(p['hair'])} Build: {dot(p['body'])} Distinctive: {dot(p['features'])}")
+    """Only what's filled in (a character from photos may leave age, background or gender blank)."""
+    who = " ".join(x for x in (f"{p['age']}-year-old" if p.get("age") else "", p.get("ethnicity", ""),
+                               p.get("gender", "")) if x)
+    parts = [f"{who}." if who else ""] + [f"{label}: {dot(p[k])}" for k, label in
+                                          (("skin", "Skin"), ("hair", "Hair"), ("body", "Build"), ("features", "Distinctive"))
+                                          if p.get(k)]
+    return " ".join(x for x in parts if x)
 
 
 # ---------------------------------------------------------------- realism
@@ -362,7 +367,7 @@ def product_line(x: dict, where: str) -> str:
     if x["use"] == "wear":
         return f"They are wearing {label} exactly as {where}: same colour, fabric, print, cut and fit."
     return (f"They hold {label} in one hand exactly as {where}: same shape, colours, label and logo, "
-            f"the label towards the camera, a natural grip.")
+            f"raised into the frame near their face, the label towards the camera, a natural grip.")
 
 
 def opening_prompt(p: dict, plan: dict, view: str, groups: list[tuple[str, int]] | None = None,

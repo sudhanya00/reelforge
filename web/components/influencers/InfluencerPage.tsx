@@ -15,6 +15,7 @@ import { api, url, type IdentityImage, type IdentityView, type Influencer } from
 import { cn, usd } from "@/lib/utils";
 import { Designer } from "./Designer";
 import { PlacesSection } from "./Places";
+import { PhotoDrop, type Photo } from "./PhotoDrop";
 import { VideosTab } from "./Videos";
 
 export function InfluencerPage({ id }: { id: string }) {
@@ -164,6 +165,7 @@ function IdentityTab({ inf }: { inf: Influencer }) {
             </Button>
           )}
         </div>
+        {inf.consent && <SourcePhotos inf={inf} />}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
           {inf.identity.map((v, i) => (
             <IdentityCard key={v.view} inf={inf} v={v} index={i} canPaint={!job && (!v.from_face || hasFace)} onRepaint={() => repaint(v.view)} onPaint={() => paint([v.view])} />
@@ -173,6 +175,43 @@ function IdentityTab({ inf }: { inf: Influencer }) {
       </section>
 
       <Designer open={editing} onOpenChange={setEditing} initial={inf.profile} id={inf.id} />
+    </div>
+  );
+}
+
+/** The photos a character made from a real person is painted from. */
+function SourcePhotos({ inf }: { inf: Influencer }) {
+  const { mutate } = useSWRConfig();
+  const [adding, setAdding] = React.useState<Photo[]>([]);
+  const refresh = (next: Influencer) => mutate(`/api/influencers/${inf.id}`, next, { revalidate: false });
+  React.useEffect(() => {
+    if (!adding.length) return;
+    api.addSources(inf.id, adding.map((x) => x.token)).then(refresh, (e) => toast.error("Couldn't add", { description: (e as Error).message }));
+    setAdding([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adding]);
+  return (
+    <div className="mb-5 rounded-xl border p-3">
+      <div className="mb-2 flex items-baseline gap-2">
+        <p className="text-sm font-medium">Made from these photos</p>
+        <p className="text-xs text-muted-foreground">Every view is painted from them. Add or remove photos, then repaint.</p>
+      </div>
+      <div className="flex flex-wrap items-start gap-2">
+        {inf.sources.map((x) => (
+          <div key={x.name} className="group relative size-16 overflow-hidden rounded-lg border">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url(x.url)} alt="" className="size-full object-cover" />
+            <button
+              onClick={() => api.deleteSource(inf.id, x.name).then(refresh)}
+              className="absolute top-0.5 right-0.5 hidden rounded-full bg-background/90 p-0.5 group-hover:block"
+              aria-label="Remove photo"
+            >
+              <Trash2 className="size-3" />
+            </button>
+          </div>
+        ))}
+        {inf.sources.length < 6 && <PhotoDrop photos={adding} onChange={setAdding} max={6 - inf.sources.length} hint="" className="[&_label]:size-16" />}
+      </div>
     </div>
   );
 }

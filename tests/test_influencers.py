@@ -342,3 +342,9 @@ def test_character_from_photos_needs_consent_and_paints_from_them(client, s, tmp
     assert len(lib.sources(me["id"])) == 2
     out, usage = inf.describe_person(client, s, lib.sources(me["id"]))
     assert set(out) >= set(inf.DESCRIBE_PERSON_KEYS)
+
+
+def test_look_text_skips_blank_fields():
+    assert inf.look_text({"age": "", "ethnicity": "", "gender": "", "skin": "olive", "hair": "bob",
+                          "body": "", "features": ""}) == "Skin: olive. Hair: bob."
+    assert inf.look_text(FAKE_PROFILE).startswith("27-year-old Filipino woman. Skin:")
