@@ -28,6 +28,8 @@ import hashlib
 import re
 
 import captions as cap
+import products as prod
+import uploads as up
 import fontbook as fb
 import director
 from providers import gcs
@@ -152,7 +154,7 @@ DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 1
                      "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360,
                      "video_veo-fast_720p": 60, "video_veo-fast_1080p": 90,
                      "video_veo_720p": 90, "video_veo_1080p": 120,
-                     "review": 40, "direct": 60, "design": 30, "script": 30, "export": 15, "sync": 30}
+                     "review": 40, "direct": 60, "design": 30, "script": 30, "export": 15, "sync": 30, "describe": 25}
 
 
 def video_key(provider: str, resolution: str) -> str:
@@ -1028,6 +1030,9 @@ def video_view(iid: str, proj: pl.Project, full: bool = False) -> dict:
                     "extension_mode": plan.get("extension_mode"), "error": item_errors(proj).get("reel"),
                     "costs": pl.project_costs(proj),
                     "setup": infl.setup_of(plan, inf["profile"]),
+                    "featured": [{"id": x["id"], "name": x["name"], "brand": x.get("brand", ""), "use": x["use"],
+                                  "image": lib_url(x["refs"][0])}
+                                 for x in the_influencers().featured(infl.setup_of(plan, inf["profile"]))],
                     "edit": edit_view(proj, lib_url),
                     "captions": cap.state(plan, pl.video_duration(proj.root / "final.mp4")
                                           if (proj.root / "final.mp4").exists() else None, font_book().ids()),
@@ -1053,12 +1058,15 @@ def influencer_view(inf: dict, full: bool = False) -> dict:
     if full:
         errors = inf.get("identity_errors", {})
         overrides = inf.get("prompt_overrides", {})
+        sources = lib_.sources(iid)
+        out["sources"] = [{"name": x.name, "url": lib_url(x)} for x in sources]
+        out["consent"] = inf.get("consent")
         out["identity"] = [{
             "view": v, "aspect": aspect, "from_face": from_face,
             "image": lib_url(lib_.image(iid, v)) if lib_.image(iid, v).exists() else None,
             "status": "generating" if v in busy else ("done" if lib_.image(iid, v).exists() else "missing"),
             "error": errors.get(v),
-            "prompt": overrides.get(v) or infl.identity_prompt(inf["profile"], v),
+            "prompt": overrides.get(v) or infl.identity_prompt(inf["profile"], v, from_sources=bool(sources)),
             "overridden": v in overrides,
         } for v, aspect, from_face, _ in infl.IDENTITY]
         out["identity_usd"] = identity_usd
@@ -1104,6 +1112,8 @@ def design_influencer(body: DesignIn):
 
 class InfluencerIn(BaseModel):
     profile: dict[str, str]
+    sources: list[str] = []                          # upload tokens: photos of a real person
+    consent: str = ""                                # required with sources
 
 
 def clean_profile(p: dict) -> dict:
@@ -1117,7 +1127,191 @@ def clean_profile(p: dict) -> dict:
 
 @app.post("/api/influencers")
 def create_influencer(body: InfluencerIn):
-    return influencer_view(the_influencers().create(clean_profile(body.profile)), full=True)
+    ups = the_uploads()
+    try:
+        photos = [ups.path(tok) for tok in body.sources]
+    except KeyError:
+        raise HTTPException(400, "A photo upload expired; add the photos again")
+    try:
+        inf = the_influencers().create(clean_profile(body.profile), sources=photos, consent=body.consent.strip())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return influencer_view(inf, full=True)
+
+
+class TokensIn(BaseModel):
+    tokens: list[str]
+
+
+@app.post("/api/influencers/{iid}/sources")
+def add_sources(iid: str, body: TokensIn):
+    inf = open_influencer(iid)
+    if not inf.get("consent"):
+        raise HTTPException(400, "This influencer wasn't made from photos")
+    try:
+        the_influencers().add_sources(iid, [the_uploads().path(t) for t in body.tokens])
+    except KeyError:
+        raise HTTPException(400, "A photo upload expired; add it again")
+    return influencer_view(open_influencer(iid), full=True)
+
+
+@app.delete("/api/influencers/{iid}/sources/{name}")
+def delete_source(iid: str, name: str):
+    open_influencer(iid)
+    try:
+        the_influencers().remove_source(iid, name)
+    except KeyError:
+        raise HTTPException(404, "No such photo")
+    return influencer_view(open_influencer(iid), full=True)
+
+
+# --------------------------------------------------------------------------
+# API: uploads and "describe from photos"
+# --------------------------------------------------------------------------
+
+def the_uploads() -> up.Uploads:
+    return up.Uploads(CONFIG["library"])
+
+
+@app.post("/api/uploads")
+async def upload_image(request: Request):
+    """An image as the raw request body; cleaned (EXIF and location removed) and held for a day."""
+    try:
+        token = the_uploads().add(await request.body())
+    except up.UploadError as e:
+        raise HTTPException(400, str(e))
+    return {"token": token}
+
+
+class DescribeIn(BaseModel):
+    tokens: list[str] = []
+    product: str | None = None                       # describe a saved product's photos instead
+    what: str                                        # person | product
+
+
+@app.post("/api/describe")
+def describe_photos(body: DescribeIn):
+    """AI reads photos into fields: a person's look (never who they are), or a product."""
+    if body.what not in ("person", "product"):
+        raise HTTPException(400, "Describe a person or a product")
+    try:
+        photos = (the_products().photos(body.product) if body.product
+                  else [the_uploads().path(t) for t in body.tokens])
+    except KeyError:
+        raise HTTPException(400, "A photo upload expired; add it again")
+    if not photos:
+        raise HTTPException(400, "Add a photo first")
+    s = current_settings()
+
+    def run(job: Job):
+        job.step("describe", "Looking at the photos")
+        fn = infl.describe_person if body.what == "person" else prod.describe
+        out, usage = fn(client_for(s), s, photos)
+        the_influencers().log_design(model=s.planner_model, usage=usage, cost_usd=pl.call_cost(s.planner_model, usage))
+        return {"fields": out}
+
+    return submit("describe", "Describing the photos", None, set(), run).view()
+
+
+# --------------------------------------------------------------------------
+# API: products (worn or held in influencer videos)
+# --------------------------------------------------------------------------
+
+def the_products() -> prod.Products:
+    return the_influencers().products
+
+
+def product_view(x: dict) -> dict:
+    lib_ = the_products()
+    shot = lib_.packshot(x["id"])
+    busy = running_claims("products")
+    return {**x, "use": prod.KINDS.get(x.get("kind"), "hold"),
+            "packshot": lib_url(shot) if shot.exists() else None,
+            "photos": [lib_url(ph) for ph in lib_.photos(x["id"])],
+            "status": "generating" if f"product:{x['id']}" in busy else ("done" if shot.exists() else "missing"),
+            "error": x.get("error")}
+
+
+@app.get("/api/products")
+def list_products():
+    return {"products": [product_view(x) for x in the_products().all()], "kinds": list(prod.KINDS)}
+
+
+class ProductIn(BaseModel):
+    name: str = ""
+    brand: str = ""
+    kind: str = "object"
+    description: str = ""
+    notes: str = ""
+    photos: list[str] = []                           # upload tokens (create only)
+
+
+def packshot_job(pid: str) -> dict:
+    s = current_settings()
+    lib_ = the_products()
+
+    def run(job: Job):
+        job.step("image", "Painting a clean product shot", record=False)
+        try:
+            prod.paint_packshot(client_for(s), s, lib_, pid)
+            err = None
+        except Exception as e:
+            err = pl.friendly_error(e)
+            raise
+        finally:
+            x = lib_.get(pid)
+            x["error"] = err
+            lib_.save(x)
+        return {"product": pid}
+
+    return submit("product", f"Product shot: {lib_.get(pid)['name']}", "products", {f"product:{pid}"}, run).view()
+
+
+@app.post("/api/products")
+def create_product(body: ProductIn):
+    try:
+        photos = [the_uploads().path(t) for t in body.photos]
+    except KeyError:
+        raise HTTPException(400, "A photo upload expired; add the photos again")
+    if not body.name.strip():
+        raise HTTPException(400, "Name the product")
+    try:
+        x = the_products().create(body.model_dump(exclude={"photos"}), photos)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"product": product_view(x), "job": packshot_job(x["id"])}
+
+
+@app.put("/api/products/{pid}")
+def update_product(pid: str, body: ProductIn):
+    try:
+        x = the_products().update(pid, body.model_dump(exclude={"photos"}))
+    except KeyError:
+        raise HTTPException(404, "No such product")
+    return product_view(x)
+
+
+@app.post("/api/products/{pid}/packshot")
+def repaint_packshot(pid: str):
+    try:
+        the_products().get(pid)
+    except KeyError:
+        raise HTTPException(404, "No such product")
+    return packshot_job(pid)
+
+
+@app.delete("/api/products/{pid}")
+def delete_product(pid: str):
+    try:
+        d = the_products().dir(pid)
+        the_products().get(pid)
+    except KeyError:
+        raise HTTPException(404, "No such product")
+    if f"product:{pid}" in running_claims("products"):
+        raise HTTPException(409, "Its product shot is being painted. Wait for it to finish.")
+    from send2trash import send2trash
+    send2trash(str(d))
+    return {"ok": True}
 
 
 @app.get("/api/influencers/{iid}")
@@ -1281,6 +1475,7 @@ class NewVideoIn(BaseModel):
     place: str = ""                                  # a saved place id, or ""
     location: str = ""                               # somewhere else, described
     outfit: str = ""
+    products: list[dict] = []                        # [{id, use: wear|hold}] worn or held in it
 
 
 @app.post("/api/influencers/{iid}/videos")
@@ -1298,7 +1493,7 @@ def new_video(iid: str, body: NewVideoIn):
         job.step("script", f"Writing in {inf['profile']['name']}'s voice")
         proj = infl.write_script(client_for(s), s, the_influencers(), iid, body.format, body.topic.strip(),
                                  body.points.strip(), body.length_s, place=body.place,
-                                 location=body.location, outfit=body.outfit)
+                                 location=body.location, outfit=body.outfit, products=body.products)
         job.log(f"Script: {proj.load_plan()['title']}")
         return {"video": proj.root.name}
 
@@ -1315,7 +1510,7 @@ class ScriptIn(BaseModel):
     caption: str | None = None
     segments: list[dict] | None = None
     format: str | None = None
-    setup: dict[str, str] | None = None
+    setup: dict | None = None
 
 
 @app.put("/api/influencers/{iid}/videos/{vid}")
@@ -1352,6 +1547,10 @@ def put_script(iid: str, vid: str, body: ScriptIn):
             new = {k: str(body.setup.get(k, cur.get(k, ""))).strip() for k in (*infl.SETUP_KEYS, "place")}
             if new["place"] and new["place"] != cur.get("place"):
                 new["location"] = the_influencers().place(inf, new["place"])["description"]
+            items = body.setup.get("products", cur.get("products", [])) or []
+            known = {x["id"] for x in the_products().all()}
+            new["products"] = [{"id": str(x.get("id")), "use": x.get("use") if x.get("use") in prod.USES else "hold"}
+                               for x in items if isinstance(x, dict) and x.get("id") in known][:2]
             plan["setup"] = new
 
     update_plan(proj, apply)

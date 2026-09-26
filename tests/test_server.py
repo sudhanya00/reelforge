@@ -539,3 +539,67 @@ def test_imported_fonts_for_captions(api, fake, monkeypatch):
     v = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
     assert v["captions"]["style"]["font"] == "poppins-extrabold"
     assert api.delete("/api/captions/fonts/anton").status_code == 404
+
+
+def _jpeg(color=(200, 30, 60)) -> bytes:
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (640, 480), color).save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def _upload(api, color=(200, 30, 60)) -> str:
+    r = api.post("/api/uploads", content=_jpeg(color), headers={"Content-Type": "application/octet-stream"})
+    assert r.status_code == 200, r.text
+    return r.json()["token"]
+
+
+def test_products_and_a_character_from_photos(api, fake):
+    assert api.post("/api/uploads", content=b"nope").status_code == 400
+
+    # describe photos (a product), then save it: a packshot is painted
+    toks = [_upload(api), _upload(api, (180, 20, 50))]
+    j = wait(api, api.post("/api/describe", json={"tokens": toks, "what": "product"}).json())
+    assert j["status"] == "done" and j["result"]["fields"]["brand"] == "Rouge Co"
+    r = api.post("/api/products", json={**j["result"]["fields"], "notes": "12 shades", "photos": toks}).json()
+    pid = r["product"]["id"]
+    assert wait(api, r["job"])["status"] == "done"
+    x = next(p for p in api.get("/api/products").json()["products"] if p["id"] == pid)
+    assert x["packshot"] and len(x["photos"]) == 2 and x["use"] == "hold" and x["status"] == "done"
+    assert api.post("/api/products", json={"name": "x", "photos": toks}).status_code == 400   # tokens used up
+    assert api.put(f"/api/products/{pid}", json={"name": "matte lipstick", "brand": "Rouge Co", "kind": "beauty",
+                                                 "notes": "10 shades"}).json()["notes"] == "10 shades"
+
+    # a character made from photos needs consent
+    srcs = [_upload(api, (90, 60, 40)) for _ in range(2)]
+    assert api.post("/api/influencers", json={"profile": {"name": "Me"}, "sources": srcs}).status_code == 400
+    me = api.post("/api/influencers", json={"profile": {"name": "Me"}, "sources": srcs,
+                                            "consent": "These photos are of me."}).json()
+    assert len(me["sources"]) == 2 and me["consent"]["text"] == "These photos are of me."
+    assert "same person as in the reference photos" in me["identity"][0]["prompt"]
+    j = wait(api, api.post("/api/describe", json={"tokens": [_upload(api)], "what": "person"}).json())
+    assert j["result"]["fields"]["features"] == "round glasses" and "ethnicity" not in j["result"]["fields"]
+    me = api.post(f"/api/influencers/{me['id']}/sources", json={"tokens": [_upload(api)]}).json()
+    assert len(me["sources"]) == 3
+    me = api.delete(f"/api/influencers/{me['id']}/sources/01.png").json()
+    assert [x["name"] for x in me["sources"]] == ["02.png", "03.png"]
+
+    # a video featuring the product
+    wait(api, api.post(f"/api/influencers/{me['id']}/identity", json={"views": ["face"]}).json())
+    vid = wait(api, api.post(f"/api/influencers/{me['id']}/videos",
+                             json={"topic": "review", "length_s": 10, "products": [{"id": pid, "use": "hold"}]}).json())["result"]["video"]
+    v = api.get(f"/api/influencers/{me['id']}/videos/{vid}").json()
+    assert v["setup"]["products"] == [{"id": pid, "use": "hold"}] and v["featured"][0]["name"] == "matte lipstick"
+    v = api.put(f"/api/influencers/{me['id']}/videos/{vid}",
+                json={"setup": {"products": [{"id": pid, "use": "wear"}, {"id": "gone", "use": "hold"}]}}).json()
+    assert v["setup"]["products"] == [{"id": pid, "use": "wear"}] and not v["opening_ok"]
+    j = wait(api, api.post(f"/api/influencers/{me['id']}/videos/{vid}/opening").json())
+    assert j["status"] == "done", j
+
+    import send2trash
+    import pytest as _pt
+    mp = _pt.MonkeyPatch()
+    mp.setattr(send2trash, "send2trash", lambda p: None)
+    assert api.delete(f"/api/products/{pid}").json()["ok"]
+    mp.undo()

@@ -148,6 +148,13 @@ class FakeClient:
             words = [{"i": i, "start": 0.4 + i * 0.35, "end": 0.7 + i * 0.35} for i in range(n)]
             return NS(text=json.dumps({"words": words, "differences": [
                 {"at": 1.2, "expected": "only", "heard": "just"}]}), usage_metadata=usage)
+        if "describe a product from photos" in system:
+            return NS(text=json.dumps({"name": "satin lipstick", "brand": "Rouge Co", "kind": "beauty",
+                                       "description": 'A red bullet in a gold case printed "ROUGE".'}), usage_metadata=usage)
+        if "describe how a person looks in photos" in system:
+            return NS(text=json.dumps({"hair": "dark brown bob", "skin": "olive, freckles", "body": "tall, slim",
+                                       "features": "round glasses", "style": "minimal", "outfit": "white shirt"}),
+                      usage_metadata=usage)
         if "fictional social-media creators" in system:          # influencer designer
             return NS(text=json.dumps(FAKE_PROFILE), usage_metadata=usage)
         if "short-form video scripts" in system:                 # influencer script

@@ -24,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pipeline as pl
+import products as prod
 import providers
 from providers import ProviderError, Ref, Shot
 from prompts import dot, edit_instruction
@@ -203,14 +204,40 @@ IDENTITY = [
 VIEW_IDS = [v[0] for v in IDENTITY]
 
 
-def identity_prompt(p: dict, view: str) -> str:
+def identity_prompt(p: dict, view: str, from_sources: bool = False) -> str:
+    """`from_sources`: the character was made from photos of a real person (with consent);
+    every view is painted from those photos."""
     _, _, from_face, framing = next(v for v in IDENTITY if v[0] == view)
     if view == "setting":
         return f"{framing} The place: {dot(p['setting'])} {PHOTO_REALISM}"
-    same = ("The same person as in the reference photo: identical face, hair, skin and features. "
-            if from_face else "")
+    if from_sources:
+        same = ("The same person as in the reference photos: identical face, face shape, hair, skin, "
+                "features and build; keep their real look, don't beautify. ")
+    else:
+        same = ("The same person as in the reference photo: identical face, hair, skin and features. "
+                if from_face else "")
     wearing = f"Wearing {dot(p['outfit'])}"
     return f"{same}{framing} {look_text(p)} {wearing} Setting: {dot(p['setting'])} {PHOTO_REALISM}"
+
+
+DESCRIBE_PERSON_SYSTEM = """You describe how a person looks in photos so an image model can paint them
+again consistently. Describe only what is visible; never identify the person or guess their name,
+age, ethnicity or gender.
+- hair: colour, length, texture, usual style.
+- skin: tone and texture, freckles, marks.
+- body: build and proportions.
+- features: one to three distinctive, recognisable details (glasses, a mole, piercings, brows).
+- style: their fashion sense from what they wear.
+- outfit: the outfit in the clearest photo: garments, colours, fabrics."""
+
+DESCRIBE_PERSON_KEYS = ("hair", "skin", "body", "features", "style", "outfit")
+DESCRIBE_PERSON_SCHEMA = {"type": "object", "required": list(DESCRIBE_PERSON_KEYS),
+                          "properties": {k: {"type": "string"} for k in DESCRIBE_PERSON_KEYS}}
+
+
+def describe_person(client, s: pl.Settings, photos: list[Path]) -> tuple[dict, dict]:
+    return pl.json_call_with_images(client, s, DESCRIBE_PERSON_SYSTEM, "Describe how this person looks.",
+                                    photos[:4], DESCRIBE_PERSON_SCHEMA, "describe person")
 
 
 def place_prompt(description: str) -> str:
@@ -266,16 +293,27 @@ SCRIPT:
   segment where they walk in or do something). End each segment at a natural pause.
 - Each segment has physical business that fits the format, so the shot is never static.
 - Keep claims generic and honest: no medical, legal or financial promises, no fake statistics.
+- Products under FEATURING: use their name and brand exactly as written, and only the facts
+  given there or what's visible; never invent claims about a product. Anything worn is part of
+  the outfit; anything held is in hand and shown to the camera.
 - End with a natural sign-off or light call to action that fits them.
 - Segment ids: p1, p2, ... Total seconds must equal the requested length."""
 
 
-def script_prompt(p: dict, fmt: str, topic: str, points: str, length_s: int, hints: dict) -> str:
+def script_prompt(p: dict, fmt: str, topic: str, points: str, length_s: int, hints: dict,
+                  featured: list[dict] | None = None) -> str:
     f = FORMATS[fmt]
     persona = "\n".join(f"- {label}: {p[k]}" for k, label in PROFILE_FIELDS if k not in ("name", "handle"))
     given = "\n".join(f"- {k}: {v}" for k, v in hints.items() if v) or "- none: choose everything"
+    feat = ""
+    if featured:
+        feat = "FEATURING:\n" + "\n".join(
+            f"- {x['name']}{' by ' + x['brand'] if x.get('brand') else ''} "
+            f"({'they wear it' if x['use'] == 'wear' else 'they hold it and show it'}): {x.get('description', '')} "
+            f"Facts they may say: {x.get('notes') or 'only what is visible'}" for x in featured) + "\n"
     return (f"CREATOR: {p['name']} ({p['handle']})\n{persona}\n\n"
             f"FORMAT: {f['label']}. {f['brief']} Physical business that fits: {f['business']}.\n"
+            f"{feat}"
             f"SETUP HINTS:\n{given}\n"
             f"TOPIC: {topic}\n"
             f"TALKING POINTS: {points or 'their choice'}\n"
@@ -284,7 +322,8 @@ def script_prompt(p: dict, fmt: str, topic: str, points: str, length_s: int, hin
 
 def default_setup(p: dict) -> dict:
     """Videos made before setups existed: home, go-to outfit."""
-    return {"place": "home", "location": p["setting"], "outfit": p["outfit"], "position": "", "light": ""}
+    return {"place": "home", "location": p["setting"], "outfit": p["outfit"], "position": "", "light": "",
+            "products": []}
 
 
 def setup_of(plan: dict, p: dict) -> dict:
@@ -308,17 +347,40 @@ def opening_views(plan: dict) -> list[str]:
     return ["opening", "look"] if fmt_of(plan).get("empty_open") else ["opening"]
 
 
-def opening_prompt(p: dict, plan: dict, view: str, has_place_image: bool) -> str:
+def ref_intro(groups: list[tuple[str, int]]) -> str:
+    """'Reference images, in order: image 1-3: the person; image 4: the place.'"""
+    parts, i = [], 1
+    for label, n in groups:
+        if n > 0:
+            parts.append(f"image {i if n == 1 else f'{i}-{i + n - 1}'}: {label}")
+            i += n
+    return ("Reference images, in order: " + "; ".join(parts) + ". ") if parts else ""
+
+
+def product_line(x: dict, where: str) -> str:
+    label = prod.ref_label(x)
+    if x["use"] == "wear":
+        return f"They are wearing {label} exactly as {where}: same colour, fabric, print, cut and fit."
+    return (f"They hold {label} in one hand exactly as {where}: same shape, colours, label and logo, "
+            f"the label towards the camera, a natural grip.")
+
+
+def opening_prompt(p: dict, plan: dict, view: str, groups: list[tuple[str, int]] | None = None,
+                   featured: list[dict] | None = None) -> str:
+    """`groups`: the reference images in order, as (what, how many)."""
     f, setup = fmt_of(plan), setup_of(plan, p)
-    place_ref = " The place is the one in the last reference photo." if has_place_image else ""
+    groups = groups or []
+    intro = ref_intro(groups)
+    place_ref = " The place is the one in its reference image." if any(g[0] == "the place" for g in groups) else ""
     if view == "opening" and f.get("empty_open"):
-        return (f"{f['frame']} Location: {dot(setup['location'])}{place_ref} "
+        return (f"{intro}{f['frame']} Location: {dot(setup['location'])}{place_ref} "
                 f"{'Light: ' + dot(setup['light']) if setup.get('light') else ''} {PHOTO_REALISM}")
-    same = ("The same person as in the reference photos: identical face, hair, skin, features and "
-            "build. Ignore the clothes in the reference photos; they wear the outfit described here. ")
+    same = ("The person is the one in the person's reference images: identical face, hair, skin, features "
+            "and build. Ignore the clothes in those images; they wear the outfit described here. ")
     framing = ("A full-length photo of them standing naturally in this outfit, at eye level."
                if view == "look" else f['frame'])
-    return f"{same}{framing} {look_text(p)} {setup_line(setup)}{place_ref} {PHOTO_REALISM}"
+    items = " ".join(product_line(x, "in its reference images") for x in (featured or []))
+    return f"{intro}{same}{framing} {look_text(p)} {setup_line(setup)}{place_ref} {items} {PHOTO_REALISM}"
 
 
 def setup_hash(plan: dict, p: dict) -> str:
@@ -330,16 +392,17 @@ def setup_hash(plan: dict, p: dict) -> str:
 # ---------------------------------------------------------------- video prompts
 
 def segment_prompt(p: dict, plan: dict, seg: dict, refs: list[str], first: bool,
-                   has_opening: bool = True) -> str:
+                   has_opening: bool = True, featured: list[dict] | None = None) -> str:
     """The Omni prompt for one segment. First turn: the opening frame is Image1 and the
     identity photos follow as references. Later turns extend the same take."""
     f, setup = fmt_of(plan), setup_of(plan, p)
     said = " ".join(seg["lines"])
     speak = (f'{p["name"]} ({dot(p["voice"])}) says, {f["to"]}: "{said}" '
              f"Delivery: {dot(seg['delivery'])} Action: {dot(seg['action'])}")
+    keep = "".join(f"; {prod.ref_label(x)} exactly as before" for x in (featured or []))
     if not first:
         return edit_instruction(
-            f"Continue the same continuous take for {seg['seconds']} more seconds: {f['continue']}, "
+            f"Continue the same continuous take for {seg['seconds']} more seconds: {f['continue']}{keep}, "
             f"no cut. {speak} {NATURAL_DELIVERY}")
     n0 = 2 if has_opening else 1
     decl = " ".join(f"<IMAGE_REF_{i}>@Image{n0 + i}" for i in range(len(refs)))
@@ -352,12 +415,20 @@ def segment_prompt(p: dict, plan: dict, seg: dict, refs: list[str], first: bool,
         lines.append(f"They wear exactly the outfit in <IMAGE_REF_{refs.index('look')}>.")
     if "place" in refs:
         lines.append(f"The place is the one in <IMAGE_REF_{refs.index('place')}>.")
+    for x in featured or []:
+        rid = f"product:{x['id']}"
+        if rid in refs:
+            tag = f"<IMAGE_REF_{refs.index(rid)}>"
+            lines.append(f"They wear {prod.ref_label(x)} from {tag}: keep its exact colour, fabric and print."
+                         if x["use"] == "wear" else
+                         f"{prod.ref_label(x)[0].upper() + prod.ref_label(x)[1:]} is the object in {tag}: keep its "
+                         f"exact shape, colours, label and logo whenever it's on screen.")
     if has_opening:
         lines.append("Start from Image1: " + (
             "the empty place; after about a second they walk into frame." if f.get("empty_open")
             else "same person, outfit, place, framing and light."))
     lines += [setup_line(setup), speak, NATURAL_DELIVERY, f["camera"], VIDEO_REALISM,
-              "Use the reference images for identity only; they must not appear as literal frames.",
+              "Use the reference images for identity and products only; they must not appear as literal frames.",
               f"Duration {seg['seconds']} seconds. One continuous take, no cuts."]
     return "\n".join(lines)
 
@@ -368,6 +439,7 @@ class Influencers:
     def __init__(self, library_root: Path):
         self.root = Path(library_root) / "influencers"
         self.root.mkdir(parents=True, exist_ok=True)
+        self.products = prod.Products(library_root)
 
     def all(self) -> list[dict]:
         out = [self.get(d.name) for d in self.root.iterdir() if (d / "influencer.json").exists()]
@@ -384,7 +456,10 @@ class Influencers:
             raise KeyError(iid)
         return json.loads(f.read_text(encoding="utf-8"))
 
-    def create(self, profile: dict) -> dict:
+    def create(self, profile: dict, sources: list[Path] | None = None, consent: str = "") -> dict:
+        """`sources`: photos of a real person the character is made from; needs `consent`."""
+        if sources and not consent:
+            raise ValueError("Confirm you have the right to use this person's likeness.")
         base = re.sub(r"[^a-z0-9]+", "_", (profile.get("name") or "creator").lower()).strip("_") or "creator"
         iid, n = base, 2
         while self.dir(iid).exists():
@@ -392,8 +467,40 @@ class Influencers:
         inf = {"id": iid, "profile": {k: profile.get(k, "") for k in KEYS}, "created": time.time()}
         (self.dir(iid) / "identity").mkdir(parents=True)
         (self.dir(iid) / "videos").mkdir()
+        if sources:
+            self.add_sources(iid, sources)
+            inf["consent"] = {"text": consent, "at": time.time()}
         self.save(inf)
         return inf
+
+    def sources(self, iid: str) -> list[Path]:
+        return sorted((self.dir(iid) / "identity" / "sources").glob("*.png"))
+
+    def add_sources(self, iid: str, photos: list[Path]) -> None:
+        d = self.dir(iid) / "identity" / "sources"
+        d.mkdir(parents=True, exist_ok=True)
+        n = max((int(x.stem) for x in d.glob("*.png") if x.stem.isdigit()), default=0)
+        for i, src in enumerate(photos, start=n + 1):
+            shutil.move(str(src), d / f"{i:02d}.png")
+
+    def remove_source(self, iid: str, name: str) -> None:
+        if not re.fullmatch(r"\d+\.png", name):
+            raise KeyError(name)
+        (self.dir(iid) / "identity" / "sources" / name).unlink(missing_ok=True)
+
+    def featured(self, setup: dict) -> list[dict]:
+        """The setup's products that still exist, with how they're used and their images."""
+        out = []
+        for item in setup.get("products") or []:
+            try:
+                x = self.products.get(item["id"])
+            except KeyError:
+                continue
+            refs = self.products.refs(x["id"])
+            if refs:
+                out.append({**x, "use": item.get("use") if item.get("use") in prod.USES else prod.KINDS[x["kind"]],
+                            "refs": refs})
+        return out
 
     def save(self, inf: dict) -> None:
         (self.dir(inf["id"]) / "influencer.json").write_text(json.dumps(inf, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -497,9 +604,11 @@ def paint_identity(client, s: pl.Settings, lib: Influencers, iid: str, views: li
         if from_face and not face.exists():
             results[view] = "failed: paint the face first"
             continue
-        prompt = inf.get("prompt_overrides", {}).get(view) or identity_prompt(p, view)
+        sources = lib.sources(iid) if view != "setting" else []
+        prompt = inf.get("prompt_overrides", {}).get(view) or identity_prompt(p, view, from_sources=bool(sources))
+        refs = ([face] if from_face else []) + sources[:4 if view == "face" else 3]
         try:
-            _paint(client, s, lib, iid, prompt, out, [face] if from_face else None, aspect, f"identity:{view}")
+            _paint(client, s, lib, iid, prompt, out, refs or None, aspect, f"identity:{view}")
             results[view] = "done"
         except Exception as e:  # noqa: BLE001
             results[view] = ("fatal: " if pl._is_fatal(e) else "failed: ") + pl.friendly_error(e)
@@ -518,9 +627,11 @@ def paint_place(client, s: pl.Settings, lib: Influencers, iid: str, pid: str) ->
 
 
 def write_script(client, s: pl.Settings, lib: Influencers, iid: str, fmt: str, topic: str,
-                 points: str, length_s: int, place: str = "", location: str = "", outfit: str = "") -> pl.Project:
+                 points: str, length_s: int, place: str = "", location: str = "", outfit: str = "",
+                 products: list[dict] | None = None) -> pl.Project:
     """Draft a video: its setup and the script in the creator's voice, as a new video folder.
-    `place` (a saved place id), `location` and `outfit` are hints the AI keeps."""
+    `place` (a saved place id), `location` and `outfit` are hints the AI keeps; `products`
+    ([{id, use}]) are worn or held in it."""
     inf = lib.get(iid)
     p = inf["profile"]
     if fmt not in FORMATS:
@@ -532,11 +643,21 @@ def write_script(client, s: pl.Settings, lib: Influencers, iid: str, fmt: str, t
         hints["location"] = f"{pl_['name']}: {pl_['description']}"
     elif location.strip():
         hints["location"] = location.strip()
-    reel, usage = pl._json_call(client, s, SCRIPT_SYSTEM, script_prompt(p, fmt, topic, points, length_s, hints),
+    items = [{"id": x["id"], "use": x.get("use", "")} for x in (products or [])][:2]
+    featured = lib.featured({"products": items})
+    worn = [prod.ref_label(x) for x in featured if x["use"] == "wear"]
+    if worn:
+        hints["must wear"] = ", ".join(worn)
+    reel, usage = pl._json_call(client, s, SCRIPT_SYSTEM,
+                                script_prompt(p, fmt, topic, points, length_s, hints, featured),
                                 REEL_SCHEMA, "script")
     reel["segments"] = normalize_segments(reel["segments"], length_s)
     setup = {k: str(reel.get("setup", {}).get(k, "")).strip() for k in SETUP_KEYS}
-    setup.update({k: v for k, v in hints.items() if v and k != "location"})
+    setup.update({k: v for k, v in hints.items() if v and k in SETUP_KEYS and k != "location"})
+    missing = [w for w in worn if w.lower() not in setup["outfit"].lower()]
+    if missing:
+        setup["outfit"] = ", ".join(missing) + (f", with {setup['outfit']}" if setup["outfit"] else "")
+    setup["products"] = [{"id": x["id"], "use": x["use"]} for x in featured]
     if place:
         setup["location"] = lib.place(inf, place)["description"]
     elif hints.get("location"):
@@ -593,11 +714,22 @@ def paint_opening(client, s: pl.Settings, lib: Influencers, iid: str, proj: pl.P
         except KeyError:
             pass
     person = [lib.image(iid, v) for v in ("face", "three_quarter", "full_body") if lib.image(iid, v).exists()]
+    featured = lib.featured(setup)
     overrides = plan.get("prompt_overrides", {})
     for view in opening_views(plan):
         empty = view == "opening" and fmt_of(plan).get("empty_open")
-        refs = ([] if empty else person) + ([place_img] if place_img and view == "opening" else [])
-        prompt = overrides.get(view) or opening_prompt(p, plan, view, bool(place_img) and view == "opening")
+        groups, refs = [], []
+        if not empty:
+            groups.append(("the person", len(person)))
+            refs += person
+        if place_img and view == "opening":
+            groups.append(("the place", 1))
+            refs.append(place_img)
+        items = [] if empty else featured
+        for x in items:
+            groups.append((prod.ref_label(x), len(x["refs"])))
+            refs += x["refs"]
+        prompt = overrides.get(view) or opening_prompt(p, plan, view, groups, items)
         on_progress and on_progress(view)
         _paint(client, s, lib, iid, prompt, opening_path(proj, view), refs or None, "9:16", view, proj=proj)
     plan = proj.load_plan()
@@ -616,6 +748,8 @@ def reel_shot(lib: Influencers, iid: str, proj: pl.Project, plan: dict, seg: dic
                 name=v, path=lib.image(iid, v)) for v in views if lib.image(iid, v).exists()]
     if has_opening and fmt_of(plan).get("empty_open") and opening_path(proj, "look").exists():
         refs.append(Ref(id="look", kind="character", name="look", path=opening_path(proj, "look")))
+    for x in lib.featured(setup_of(plan, lib.get(iid)["profile"])):
+        refs.append(Ref(id=f"product:{x['id']}", kind="prop", name=x["name"], path=x["refs"][0]))
     return Shot(plan=plan, scene=seg, refs=refs, first_frame=opening_path(proj) if has_opening else None,
                 aspect="9:16", resolution=resolution, duration_s=seg["seconds"])
 
@@ -639,18 +773,20 @@ def shoot_reel(client, s: pl.Settings, lib: Influencers, iid: str, proj: pl.Proj
         log("Opening frame painted")
         plan = proj.load_plan()
     overrides = plan.get("prompt_overrides", {})
+    featured = lib.featured(setup_of(plan, p))
     meta, turns = None, []
     for i, seg in enumerate(segs, start=1):
         step("video", f"{'Shooting' if i == 1 else 'Extending'} · segment {i} of {len(segs)}", i - 1, len(segs))
         if i == 1:
             shot = reel_shot(lib, iid, proj, plan, seg, vp.resolution_for(s.resolution))
             prompt = overrides.get(seg["id"]) or segment_prompt(
-                p, plan, seg, [r.id for r in shot.refs], first=True, has_opening=bool(shot.first_frame))
+                p, plan, seg, [r.id for r in shot.refs], first=True, has_opening=bool(shot.first_frame),
+                featured=featured)
             submit = (lambda sh, pr: lambda: vp.submit(sh, pr))(shot, prompt)
             info = {"refs": [r.id for r in shot.refs], "first_frame": bool(shot.first_frame),
                     "format": {"type": "video", "aspect_ratio": "9:16", "resolution": shot.resolution}}
         else:
-            prompt = overrides.get(seg["id"]) or segment_prompt(p, plan, seg, [], first=False)
+            prompt = overrides.get(seg["id"]) or segment_prompt(p, plan, seg, [], first=False, featured=featured)
             submit = (lambda m, pr: lambda: vp.submit_extend(m, pr))(meta, prompt)
             info = {"extends": turns[-1].name}
         out = pl._shoot(vp, s, proj, "reel", submit,

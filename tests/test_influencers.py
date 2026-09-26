@@ -90,7 +90,8 @@ def test_write_script_sets_up_the_video(client, s, lib, mira):
     assert [(g["id"], g["seconds"]) for g in plan["segments"]] == [("p1", 10), ("p2", 10), ("p3", 10)]
     # the AI's setup, with the user's outfit kept
     assert plan["setup"] == {"location": "a bright corner shop aisle", "outfit": "red dress",
-                             "position": "walking down the aisle", "light": "fluorescent shop light", "place": ""}
+                             "position": "walking down the aisle", "light": "fluorescent shop light", "place": "",
+                             "products": []}
     prompt = [c for c in client.calls if c[0] == "generate_content"][-1][2]
     assert "Walk and talk" in prompt and "outfit: red dress" in prompt and "3 segments" in prompt
     assert [v.root for v in lib.videos(mira)] == [proj.root]
@@ -109,14 +110,15 @@ def test_write_script_at_a_saved_place(client, s, lib, mira):
 def test_opening_prompts_per_format():
     plan = {"format": "mirror", "setup": {"location": "hotel bathroom", "outfit": "black slip dress",
                                           "position": "", "light": "warm vanity bulbs", "place": ""}}
-    o = inf.opening_prompt(FAKE_PROFILE, plan, "opening", False)
-    assert "Ignore the clothes in the reference photos" in o and "black slip dress" in o
+    o = inf.opening_prompt(FAKE_PROFILE, plan, "opening", [("the person", 3)])
+    assert o.startswith("Reference images, in order: image 1-3: the person.")
+    assert "Ignore the clothes in those images" in o and "black slip dress" in o
     assert "mirror" in o and "phone held at chest height and visible" in o and "olive cardigan" not in o
     walk_in = {**plan, "format": "walk_in"}
     assert inf.opening_views(walk_in) == ["opening", "look"]
-    empty = inf.opening_prompt(FAKE_PROFILE, walk_in, "opening", True)
-    assert "nobody in it" in empty and "black slip dress" not in empty and "last reference photo" in empty
-    look = inf.opening_prompt(FAKE_PROFILE, walk_in, "look", False)
+    empty = inf.opening_prompt(FAKE_PROFILE, walk_in, "opening", [("the place", 1)])
+    assert "nobody in it" in empty and "black slip dress" not in empty and "place is the one in its reference" in empty
+    look = inf.opening_prompt(FAKE_PROFILE, walk_in, "look", [("the person", 3)])
     assert "full-length" in look and "black slip dress" in look
     # an old video (no setup) is at home in the go-to outfit
     old = inf.setup_of({"format": "talking_head"}, FAKE_PROFILE)
@@ -227,3 +229,116 @@ def test_omni_is_the_only_provider_that_extends(s):
     assert caps == {"gemini-omni": True, "veo-fast": False, "veo": False, "kling": False}
     with pytest.raises(providers.ProviderError, match="can't extend"):
         providers.video_provider("veo-fast", s).submit_extend({}, "more")
+
+
+# ---------------------------------------------------------------- products and characters from photos
+
+from PIL import Image  # noqa: E402
+
+import products as prodmod  # noqa: E402
+import uploads as up  # noqa: E402
+
+
+def _photo(tmp_path, name, color=(200, 30, 60), exif_gps=False):
+    img = Image.new("RGB", (800, 600), color)
+    path = tmp_path / name
+    if exif_gps:
+        exif = Image.Exif()
+        exif[0x8825] = {2: (51, 30, 0)}                 # a GPS latitude
+        img.save(path, format="JPEG", exif=exif)
+    else:
+        img.save(path, format="JPEG")
+    return path
+
+
+def test_uploads_are_cleaned_pngs_without_metadata(tmp_path):
+    ups = up.Uploads(tmp_path / "library")
+    tok = ups.add(_photo(tmp_path, "gps.jpg", exif_gps=True).read_bytes())
+    stored = ups.path(tok)
+    assert stored.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert not Image.open(stored).getexif()                     # GPS and all EXIF gone
+    with pytest.raises(up.UploadError):
+        ups.add(b"not an image")
+    with pytest.raises(KeyError):
+        ups.path("../../etc")
+
+
+def _product(lib, tmp_path, kind="beauty", name="satin lipstick", brand="Rouge Co"):
+    ups = up.Uploads(tmp_path / "library")
+    photos = [ups.path(ups.add(_photo(tmp_path, f"p{i}.jpg").read_bytes())) for i in range(2)]
+    return lib.products.create({"name": name, "brand": brand, "kind": kind,
+                                "description": 'red bullet, gold case printed "ROUGE"', "notes": "12 shades"}, photos)
+
+
+def test_products_are_stored_described_and_packshotted(client, s, lib, mira, tmp_path):
+    x = _product(lib, tmp_path)
+    assert x["id"] == "rouge_co_satin_lipstick" and len(lib.products.photos(x["id"])) == 2
+    assert lib.products.refs(x["id"]) == lib.products.photos(x["id"])[:1]      # no packshot yet
+    prodmod.paint_packshot(client, s, lib.products, x["id"])
+    assert lib.products.refs(x["id"])[0].name == "packshot.png"
+    call = image_calls(client)[-1]
+    assert len(call[2]) == 3 and "plain light-grey background" in call[2][-1] and "Rouge Co" in call[2][-1]
+    out, usage = prodmod.describe(client, s, lib.products.photos(x["id"]))
+    assert out["kind"] in prodmod.KINDS and usage
+
+
+def test_a_worn_and_a_held_product_in_the_script_opening_and_video(client, s, lib, mira, tmp_path):
+    inf.paint_identity(client, s, lib, mira)
+    top = _product(lib, tmp_path, kind="clothing", name="lilac cable-knit top", brand="")
+    stick = _product(lib, tmp_path)
+    proj = inf.write_script(client, s, lib, mira, "talking_head", "lipstick review", "", 20,
+                            products=[{"id": top["id"], "use": ""}, {"id": stick["id"], "use": "hold"}])
+    setup = proj.load_plan()["setup"]
+    assert setup["products"] == [{"id": top["id"], "use": "wear"}, {"id": stick["id"], "use": "hold"}]
+    assert setup["outfit"].startswith("the lilac cable-knit top")          # worn product forced into the outfit
+    sp = [c for c in client.calls if c[0] == "generate_content"][-1][2]
+    assert "FEATURING:" in sp and "satin lipstick by Rouge Co (they hold it" in sp and "12 shades" in sp
+    assert "must wear: the lilac cable-knit top" in sp
+
+    n = len(image_calls(client))
+    inf.paint_opening(client, s, lib, mira, proj)
+    call = image_calls(client)[n]
+    prompt = call[2][-1]
+    assert len(call[2]) - 1 == 3 + 1 + 1                                    # person x3, top x1, lipstick x1
+    assert prompt.startswith("Reference images, in order: image 1-3: the person; image 4: the lilac cable-knit top; "
+                             "image 5: the satin lipstick by Rouge Co.")
+    assert "wearing the lilac cable-knit top exactly as in its reference images" in prompt
+    assert "hold the satin lipstick by Rouge Co in one hand" in prompt
+
+    if not HAS_FFMPEG:
+        return
+    inf.shoot_reel(client, s, lib, mira, proj, log=lambda *_: None)
+    first, ext = [c[1] for c in client.calls if c[0] == "interactions.create"][-2:]
+    text = first["input"][-1]["text"]
+    assert len([x for x in first["input"] if x["type"] == "image"]) == 1 + 3 + 2   # opening, identity, products
+    assert "They wear the lilac cable-knit top from <IMAGE_REF_3>" in text
+    assert "The satin lipstick by Rouge Co is the object in <IMAGE_REF_4>" in text
+    assert "the satin lipstick by Rouge Co exactly as before" in ext["input"]
+
+
+def test_a_deleted_product_drops_out_quietly(lib, tmp_path):
+    x = _product(lib, tmp_path)
+    assert [f["id"] for f in lib.featured({"products": [{"id": x["id"]}, {"id": "gone"}]})] == [x["id"]]
+    assert lib.featured({"products": [{"id": x["id"]}]})[0]["use"] == "hold"     # a beauty product: held
+
+
+def test_character_from_photos_needs_consent_and_paints_from_them(client, s, tmp_path):
+    lib = inf.Influencers(tmp_path / "library")
+    ups = up.Uploads(tmp_path / "library")
+    photos = [ups.path(ups.add(_photo(tmp_path, f"me{i}.jpg", (90, 60, 40)).read_bytes())) for i in range(3)]
+    with pytest.raises(ValueError, match="right to use"):
+        lib.create({"name": "Me"}, sources=photos)
+    me = lib.create({"name": "Me", **{k: FAKE_PROFILE[k] for k in ("age", "hair", "outfit", "setting")}},
+                    sources=photos, consent="These are photos of me.")
+    assert len(lib.sources(me["id"])) == 3 and me["consent"]["text"] == "These are photos of me."
+    inf.paint_identity(client, s, lib, me["id"])
+    calls = image_calls(client)
+    face, setting = calls[0], calls[1]                                     # face and home first
+    assert len(face[2]) - 1 == 3 and "same person as in the reference photos" in face[2][-1]
+    assert len(setting[2]) == 1                                           # the room: no photos of the person
+    side = calls[-1]
+    assert len(side[2]) - 1 == 1 + 3                                       # the painted face + the photos
+    lib.remove_source(me["id"], "01.png")
+    assert len(lib.sources(me["id"])) == 2
+    out, usage = inf.describe_person(client, s, lib.sources(me["id"]))
+    assert set(out) >= set(inf.DESCRIBE_PERSON_KEYS)

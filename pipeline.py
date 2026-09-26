@@ -436,8 +436,15 @@ Rules that make AI clips succeed:
 - Keep the whole story within the requested scene count."""
 
 
-def _json_call(client, s: Settings, system: str, prompt: str, schema: dict, what: str) -> tuple[dict, dict]:
-    """One structured call to the planner model: (parsed JSON, usage)."""
+def json_call_with_images(client, s: Settings, system: str, prompt: str, images: list[Path], schema: dict,
+                          what: str) -> tuple[dict, dict]:
+    """A structured planner call that also looks at images (PNG files)."""
+    parts = [types.Part.from_bytes(data=p.read_bytes(), mime_type="image/png") for p in images]
+    return _json_call(client, s, system, parts + [prompt], schema, what)
+
+
+def _json_call(client, s: Settings, system: str, prompt, schema: dict, what: str) -> tuple[dict, dict]:
+    """One structured call to the planner model: (parsed JSON, usage). `prompt`: text or parts."""
     resp = _with_retry(lambda: client.models.generate_content(
         model=s.planner_model,
         contents=prompt,
