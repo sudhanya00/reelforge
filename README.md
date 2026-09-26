@@ -65,6 +65,15 @@ An **opening frame** (one image, two for walk-ins) is painted from the identity 
 setup; **Shoot** starts the video from it and extends the same take with Gemini Omni, 10 s
 at a time, up to 40 s. Stored under `library/influencers/<id>/`.
 
+## Edit, download, 1080p
+Finished films and videos have **Download** and **Edit**: trim, colour (looks, brightness,
+contrast, saturation, warmth) and audio (volume, reduce noise, even out loudness, mute).
+Edits export a copy (`edited.mp4`); the original stays.
+
+1080p is native (Omni renders it), not upscaled. On Vertex it's delivered through a Cloud
+Storage bucket: **Settings → Generation → Create bucket** once (private, in your project,
+files deleted after a day), then pick 1080p. It costs about 1.5x 720p.
+
 ## Costs
 Every generation call logs its token usage and an estimated `cost_usd` to `log.jsonl`
 (prices live in `Settings.PRICES`). The app shows spend per film, an estimate on every
