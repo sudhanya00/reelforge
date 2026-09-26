@@ -424,3 +424,36 @@ def test_influencer_places_setups_and_opening(api, fake):
     assert api.put(f"/api/influencers/{iid}/videos/{vid}", json={"format": "yodel"}).status_code == 400
     lst = api.get("/api/influencers").json()
     assert [f["id"] for f in lst["formats"]][:2] == ["talking_head", "propped"]
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_edit_export_and_reset(api, fake):
+    iid = api.post("/api/influencers", json={"profile": {"name": "Ana"}}).json()["id"]
+    vid = wait(api, api.post(f"/api/influencers/{iid}/videos", json={"topic": "x", "length_s": 10}).json())["result"]["video"]
+    assert api.put(f"/api/influencers/{iid}/videos/{vid}/edit", json={"params": {}}).status_code == 400   # nothing shot yet
+    wait(api, api.post(f"/api/influencers/{iid}/identity", json={"views": ["face"]}).json())
+    wait(api, api.post(f"/api/influencers/{iid}/videos/{vid}/shoot").json())
+    v = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
+    assert v["edit"]["url"] is None and v["edit"]["params"]["brightness"] == 1.0
+    j = wait(api, api.put(f"/api/influencers/{iid}/videos/{vid}/edit",
+                          json={"params": {"start": 0.3, "warmth": 0.4, "normalize": True}}).json())
+    assert j["status"] == "done", j
+    v = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
+    assert v["edit"]["url"] and v["edit"]["params"]["warmth"] == 0.4 and not v["edit"]["stale"]
+    assert api.get(v["edit"]["url"]).status_code == 200
+    j = wait(api, api.put(f"/api/influencers/{iid}/videos/{vid}/edit", json={"params": {}}).json())
+    v = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
+    assert v["edit"]["url"] is None and v["edit"]["params"]["warmth"] == 0.0
+    assert api.put(f"/api/influencers/{iid}/videos/{vid}/edit", json={"params": {"start": 1, "end": 1.1}}).status_code == 400
+
+
+def test_bucket_setup_enables_high_res(api):
+    api.put("/api/settings", json={"backend": "gemini"})
+    assert api.post("/api/settings/bucket", json={}).status_code == 400          # not on Vertex
+    api.put("/api/settings", json={"backend": "vertex", "gcp_project": "my-proj"})
+    assert api.get("/api/state").json()["settings"]["high_res_ready"] is False
+    assert api.post("/api/settings/bucket", json={"name": "Bad Name!"}).status_code == 400
+    r = api.post("/api/settings/bucket", json={}).json()
+    assert r["bucket"]["name"] == "my-proj-reelforge"
+    st = api.get("/api/state").json()["settings"]
+    assert st["gcs_bucket"] == "my-proj-reelforge" and st["high_res_ready"] is True

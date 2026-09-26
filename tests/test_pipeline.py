@@ -9,6 +9,7 @@ import pytest
 from PIL import Image
 
 import pipeline as pl
+from providers import ProviderError
 from fakes import HAS_FFMPEG, PLAN, FakeClient, api_error, interactions_error, log_entries
 
 
@@ -131,11 +132,36 @@ def test_unsaved_video_is_still_cost_logged(proj, client, s):
     assert e["kind"] == "video_unsaved" and e["cost_usd"] is not None
 
 
-def test_vertex_high_res_fails_before_paying(proj, client):
+def test_vertex_high_res_needs_a_bucket_and_fails_before_paying(proj, client):
     s = pl.Settings(backend="vertex", gcp_project="p", resolution="1080p")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ProviderError, match="Create a bucket"):
         pl.generate_take(client, s, proj, "s01")
     assert not [c for c in client.calls if c[0] == "interactions.create"]
+
+
+def test_vertex_high_res_comes_through_cloud_storage(proj, client, monkeypatch, mp4_bytes):
+    import providers.gcs as gcs
+    from fakes import FAKE_GCS, fake_gcs_transport
+    monkeypatch.setattr(gcs, "TRANSPORT", fake_gcs_transport)
+    s = pl.Settings(backend="vertex", gcp_project="p", resolution="1080p", gcs_bucket="bkt")
+    take = pl.generate_take(client, s, proj, "s01")
+    assert take.read_bytes() == mp4_bytes
+    fmt = [c[1] for c in client.calls if c[0] == "interactions.create"][0]["response_format"]
+    assert fmt["delivery"] == "uri" and fmt["gcs_uri"].startswith("gs://bkt/reelforge/")
+    assert not FAKE_GCS                          # downloaded, then removed from the bucket
+    # an edit writes to a fresh folder
+    pl.edit_take(client, s, proj, "s01", take, "brighter")
+    fmt2 = [c[1] for c in client.calls if c[0] == "interactions.create"][1]["response_format"]
+    assert fmt2["gcs_uri"] != fmt["gcs_uri"] and fmt2["resolution"] == "1080p"
+
+
+def test_ensure_bucket_creates_once(monkeypatch):
+    import providers.gcs as gcs
+    from fakes import FAKE_BUCKETS, fake_gcs_transport
+    monkeypatch.setattr(gcs, "TRANSPORT", fake_gcs_transport)
+    FAKE_BUCKETS.discard("new-bkt")
+    assert gcs.ensure_bucket("new-bkt", "p") is True
+    assert gcs.ensure_bucket("new-bkt", "p") is False
 
 
 def test_project_costs_totals(proj, client, s):

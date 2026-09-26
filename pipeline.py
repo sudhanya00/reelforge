@@ -118,6 +118,8 @@ class Settings:
     backend: str = field(default_factory=lambda: "vertex" if _env_bool("GOOGLE_GENAI_USE_VERTEXAI") else "gemini")
     gcp_project: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLOUD_PROJECT", ""))
     gcp_location: str = field(default_factory=lambda: os.environ.get("GOOGLE_CLOUD_LOCATION", "global"))
+    # Vertex delivers Omni 1080p/4k to Cloud Storage; videos pass through this bucket
+    gcs_bucket: str = field(default_factory=lambda: os.environ.get("REELFORGE_GCS_BUCKET", ""))
 
     def __post_init__(self):
         for k, v in self.MODELS[self.backend].items():

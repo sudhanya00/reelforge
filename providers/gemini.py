@@ -10,11 +10,13 @@ import base64
 import io
 import re
 import time
+import uuid
 from pathlib import Path
 
 from google.genai import types
 
 from prompts import scene_lines
+from . import gcs
 from .base import (ImageProvider, ImageResult, ProviderError, Shot, Submission, VideoCaps,
                    VideoProvider, VideoResult)
 
@@ -80,10 +82,17 @@ class GeminiOmniVideo(VideoProvider):
     def _format(self, aspect: str, resolution: str) -> dict:
         fmt = {"type": "video", "aspect_ratio": aspect, "resolution": resolution}
         if resolution in ("1080p", "4k"):
-            if self.s.backend == "vertex":        # fail before paying, not after
-                raise NotImplementedError("1080p/4k on Vertex is delivered to Cloud Storage, "
-                                          "which isn't wired up yet. Use 720p or lower.")
             fmt["delivery"] = "uri"
+        return self._delivery(fmt)
+
+    def _delivery(self, fmt: dict) -> dict:
+        """Large outputs on Vertex go to Cloud Storage: a fresh folder per generation."""
+        fmt = {k: v for k, v in fmt.items() if k != "gcs_uri"}
+        if fmt.get("delivery") == "uri" and self.s.backend == "vertex":
+            if not self.s.gcs_bucket:              # fail before paying, not after
+                raise ProviderError(400, "1080p and 4K on Vertex are delivered through Cloud Storage. "
+                                         "Create a bucket in Settings first, or use 720p.")
+            fmt["gcs_uri"] = f"gs://{self.s.gcs_bucket}/reelforge/{uuid.uuid4().hex}/"
         return fmt
 
     def submit(self, shot: Shot, prompt: str) -> Submission:
@@ -102,7 +111,7 @@ class GeminiOmniVideo(VideoProvider):
     def submit_edit(self, take_meta: dict, instruction: str) -> Submission:
         if "interaction_id" not in take_meta:
             raise ProviderError(400, "This take wasn't made by Gemini Omni, so Omni can't edit it.")
-        fmt = take_meta["format"]          # same res/aspect as the source take
+        fmt = self._delivery(take_meta["format"])          # same res/aspect as the source take
         interaction = self.client.interactions.create(
             model=self.model, previous_interaction_id=take_meta["interaction_id"],
             input=instruction, response_format=fmt, timeout=self.s.video_timeout_s)
@@ -113,7 +122,7 @@ class GeminiOmniVideo(VideoProvider):
         """Continue the same take (same person, voice, room, camera) for about 10 more seconds."""
         if "interaction_id" not in take_meta:
             raise ProviderError(400, "Only a Gemini Omni take can be extended by Omni.")
-        fmt = take_meta["format"]
+        fmt = self._delivery(take_meta["format"])
         interaction = self.client.interactions.create(
             model=self.model, previous_interaction_id=take_meta["interaction_id"],
             input=prompt, response_format=fmt, timeout=self.s.video_timeout_s)
@@ -148,8 +157,9 @@ class GeminiOmniVideo(VideoProvider):
         if getattr(vid, "data", None):
             return base64.b64decode(vid.data)
         if (vid.uri or "").startswith("gs://"):
-            raise NotImplementedError(f"Video was delivered to Cloud Storage ({vid.uri}); "
-                                      "GCS download isn't implemented yet. Use 360p/720p on Vertex.")
+            data = gcs.download(vid.uri, self.s.gcp_project)
+            gcs.delete_prefix(vid.uri, self.s.gcp_project)
+            return data
         m = re.search(r"files/([A-Za-z0-9_-]+)", vid.uri or "")
         if not m:
             raise RuntimeError("Video returned without data or a usable uri")

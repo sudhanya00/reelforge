@@ -25,7 +25,11 @@ from pydantic import BaseModel
 
 import hashlib
 
+import re
+
 import director
+from providers import gcs
+import editor
 import influencers as infl
 import library as lib
 import pipeline as pl
@@ -68,7 +72,7 @@ def projects_dir() -> Path:
 # --------------------------------------------------------------------------
 
 PREF_KEYS = ("backend", "gcp_project", "gcp_location", "resolution", "image_size", "orientation",
-             "video_provider")
+             "video_provider", "gcs_bucket")
 BOOL_PREFS = ("kling_audio",)
 MODEL_KEYS = ("planner_model", "image_model", "video_model")
 
@@ -97,6 +101,9 @@ def settings_view(s: pl.Settings) -> dict:
         "planner_model": s.planner_model, "image_model": s.image_model, "video_model": s.video_model,
         "resolution": s.resolution, "image_size": s.image_size, "orientation": s.orientation,
         "video_provider": s.video_provider, "kling_audio": s.kling_audio,
+        "gcs_bucket": s.gcs_bucket,
+        # Omni 1080p/4k on Vertex needs the bucket; the Gemini API delivers them directly
+        "high_res_ready": s.backend != "vertex" or bool(s.gcs_bucket),
         "providers": providers.catalog(s),
         "default_models": pl.Settings.MODELS,
         # what the UI needs to show estimates on every button that spends money
@@ -143,7 +150,7 @@ DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 1
                      "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360,
                      "video_veo-fast_720p": 60, "video_veo-fast_1080p": 90,
                      "video_veo_720p": 90, "video_veo_1080p": 120,
-                     "review": 40, "direct": 60, "design": 30, "script": 30}
+                     "review": 40, "direct": 60, "design": 30, "script": 30, "export": 15}
 
 
 def video_key(provider: str, resolution: str) -> str:
@@ -373,6 +380,7 @@ def project_view(proj: pl.Project) -> dict:
         "final": {"url": file_url(proj, final), "poster": poster_url(proj, final),
                   "duration_s": pl.video_duration(final), "updated": final.stat().st_mtime}
         if final.exists() else None,
+        "edit": edit_view(proj, lambda path: file_url(proj, path)),
         "costs": pl.project_costs(proj),
         "busy": sorted(busy),
     }
@@ -489,6 +497,33 @@ def check_connection():
     return {"ok": not missing, "models": found,
             "message": f"Connected to {where}." + (f" Not available here: {', '.join(missing)}."
                                                    if missing else " All three models are available.")}
+
+
+class BucketIn(BaseModel):
+    name: str | None = None
+
+
+@app.post("/api/settings/bucket")
+def create_bucket(body: BucketIn):
+    """Create (or adopt) the Cloud Storage bucket Vertex delivers 1080p/4k videos to.
+    Private, in the app's project; anything left in it is deleted after a day."""
+    s = current_settings()
+    if s.backend != "vertex" or not s.gcp_project:
+        raise HTTPException(400, "Only needed on Vertex AI, with a project set")
+    name = (body.name or f"{s.gcp_project}-reelforge").strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{1,61}[a-z0-9]", name):
+        raise HTTPException(400, "Bucket names are 3-63 lowercase letters, digits, - _ .")
+    if not CONFIG["fake"]:
+        try:
+            created = gcs.ensure_bucket(name, s.gcp_project)
+        except Exception as e:                       # noqa: BLE001
+            raise HTTPException(400, pl.friendly_error(e))
+    else:
+        created = True
+    prefs = load_prefs()
+    prefs["gcs_bucket"] = name
+    PREFS_PATH.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+    return {**get_state(), "bucket": {"name": name, "created": created}}
 
 
 # --------------------------------------------------------------------------
@@ -991,6 +1026,7 @@ def video_view(iid: str, proj: pl.Project, full: bool = False) -> dict:
                     "extension_mode": plan.get("extension_mode"), "error": item_errors(proj).get("reel"),
                     "costs": pl.project_costs(proj),
                     "setup": infl.setup_of(plan, inf["profile"]),
+                    "edit": edit_view(proj, lib_url),
                     "opening": openings, "opening_ok": opening_ok,
                     "opening_error": item_errors(proj).get("opening"),
                     "estimate": infl.estimate_usd(current_settings(), plan, needs_opening=not opening_ok)})
@@ -1380,6 +1416,68 @@ def influencer_poster(iid: str, path: str):
     if root.resolve() not in video.parents or video.suffix != ".mp4" or not video.exists():
         raise HTTPException(404, "No such video")
     return poster_file(video, video.parent / "posters" / f"{video.stem}.jpg")
+
+
+# --------------------------------------------------------------------------
+# API: the small editor (trim, colour, audio) for a finished film or video
+# --------------------------------------------------------------------------
+
+def edit_view(proj: pl.Project, url_of) -> dict | None:
+    final = proj.root / "final.mp4"
+    if not final.exists():
+        return None
+    edited = proj.root / "edited.mp4"
+    plan = proj.load_plan()
+    return {"params": {**editor.DEFAULTS, **plan.get("edit", {})},
+            "url": url_of(edited) if edited.exists() else None,
+            "stale": edited.exists() and edited.stat().st_mtime < final.stat().st_mtime,
+            "duration_s": pl.video_duration(final)}
+
+
+class EditIn(BaseModel):
+    params: dict
+
+
+def export_job(proj: pl.Project, project_key: str, claims: set[str], params: dict) -> dict:
+    final = proj.root / "final.mp4"
+    if not final.exists():
+        raise HTTPException(400, "There's no finished video to edit yet")
+    try:
+        e = editor.clean(params, pl.video_duration(final))
+    except ValueError as err:
+        raise HTTPException(400, str(err))
+
+    def run(job: Job):
+        edited = proj.root / "edited.mp4"
+        if editor.is_identity(e):
+            edited.unlink(missing_ok=True)
+            with plan_lock(proj.root.name):
+                plan = proj.load_plan()
+                plan.pop("edit", None)
+                proj.save_plan(plan)
+            job.log("Edit cleared: the original is the video again")
+            return {"edited": False}
+        job.step("export", "Exporting the edit")
+        editor.render(final, edited, e)
+        with plan_lock(proj.root.name):
+            plan = proj.load_plan()
+            plan["edit"] = e
+            proj.save_plan(plan)
+        job.log(f"Exported {edited.name}")
+        return {"edited": True}
+
+    return submit("export", "Exporting the edit", project_key, claims, run).view()
+
+
+@app.put("/api/projects/{pid}/edit")
+def edit_film(pid: str, body: EditIn):
+    return export_job(open_project(pid), pid, {"export"}, body.params)
+
+
+@app.put("/api/influencers/{iid}/videos/{vid}/edit")
+def edit_video(iid: str, vid: str, body: EditIn):
+    proj = open_video(iid, vid)
+    return export_job(proj, inf_key(iid), {vid}, body.params)
 
 
 @app.get("/api/jobs")

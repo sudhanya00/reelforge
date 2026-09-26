@@ -164,11 +164,43 @@ class FakeClient:
         aspect = kw.get("response_format", {}).get("aspect_ratio", "16:9")
         clip = self.mp4 if isinstance(self.mp4, bytes) else self.mp4[aspect]
         video = None if self.fail_save else NS(data=base64.b64encode(clip).decode(), uri=None)
+        gcs_uri = kw.get("response_format", {}).get("gcs_uri")
+        if gcs_uri and video:                   # Vertex 1080p/4k: delivered to Cloud Storage
+            FAKE_GCS[gcs_uri[5:] + "sample_0.mp4"] = clip
+            video = NS(data=None, uri=gcs_uri + "sample_0.mp4")
         return NS(id=f"ix{self._n}", status="completed", output_video=video, errors=None,
                   usage=NS(total_input_tokens=3610, total_output_tokens=11586, total_thought_tokens=772))
 
     def _get(self, id):
         raise AssertionError("get() should not be needed for completed interactions")
+
+FAKE_GCS: dict[str, bytes] = {}          # "bucket/name" -> bytes
+FAKE_BUCKETS: set[str] = set()
+
+
+def fake_gcs_transport(method, url, params=None, json=None, **kw):
+    """Enough of the Cloud Storage JSON API for providers.gcs."""
+    from urllib.parse import unquote
+    ok = lambda body=None, content=b"": NS(status_code=200, content=content, json=lambda: body or {})  # noqa: E731
+    path = url.split("/storage/v1/", 1)[1]
+    if path == "b" and method == "POST":
+        FAKE_BUCKETS.add(json["name"])
+        return ok(json)
+    parts = path.split("/")                     # b, bucket[, o[, name]]
+    bucket = parts[1]
+    if len(parts) == 2:
+        return ok({"name": bucket}) if bucket in FAKE_BUCKETS else NS(status_code=404, content=b"", json=lambda: {})
+    if len(parts) == 3:                         # list
+        pre = f"{bucket}/{params.get('prefix', '')}"
+        return ok({"items": [{"name": k.split("/", 1)[1]} for k in FAKE_GCS if k.startswith(pre)]})
+    key = f"{bucket}/{unquote(parts[3])}"
+    if method == "DELETE":
+        FAKE_GCS.pop(key, None)
+        return ok()
+    if key not in FAKE_GCS:
+        return NS(status_code=404, content=b"", json=lambda: {"error": {"message": "No such object"}})
+    return ok(content=FAKE_GCS[key])
+
 
 def log_entries(proj):
     return [json.loads(l) for l in (proj.root / "log.jsonl").read_text(encoding="utf-8").splitlines()]
