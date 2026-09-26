@@ -14,53 +14,16 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import struct
 import subprocess
 from pathlib import Path
 
 from google.genai import types
 
+import fontbook as fb
 import pipeline as pl
 
-FONTS_DIR = Path(__file__).resolve().parent / "fonts"
-
-# id, label, file, ASS family name, bold flag (libass matches family + bold)
-FONTS = [
-    ("poppins-black", "Poppins Black", "Poppins-Black.ttf", "Poppins Black", False),
-    ("poppins-extrabold", "Poppins ExtraBold", "Poppins-ExtraBold.ttf", "Poppins ExtraBold", False),
-    ("poppins-semibold", "Poppins SemiBold", "Poppins-SemiBold.ttf", "Poppins SemiBold", False),
-    ("kanit-bold", "Kanit Bold", "Kanit-Bold.ttf", "Kanit", True),
-    ("anton", "Anton", "Anton-Regular.ttf", "Anton", False),
-    ("bebas", "Bebas Neue", "BebasNeue-Regular.ttf", "Bebas Neue", False),
-    ("archivo-black", "Archivo Black", "ArchivoBlack-Regular.ttf", "Archivo Black", False),
-    ("luckiest-guy", "Luckiest Guy", "LuckiestGuy-Regular.ttf", "Luckiest Guy", False),
-    ("permanent-marker", "Permanent Marker", "PermanentMarker-Regular.ttf", "Permanent Marker", False),
-    ("dm-serif", "DM Serif Display", "DMSerifDisplay-Regular.ttf", "DM Serif Display", False),
-]
-FONT_IDS = [f[0] for f in FONTS]
-
-
-def _em_scale(path: Path) -> float:
-    """libass sizes text so ascent+descent = the font size; browsers size the em square.
-    Multiply a size by this to get the CSS font-size that looks the same."""
-    d = path.read_bytes()
-    tables = {}
-    for i in range(struct.unpack(">H", d[4:6])[0]):
-        tag, _, off, _ = struct.unpack(">4sIII", d[12 + 16 * i:28 + 16 * i])
-        tables[tag] = off
-    upem = struct.unpack(">H", d[tables[b"head"] + 18:tables[b"head"] + 20])[0]
-    os2 = tables.get(b"OS/2")
-    asc, desc = struct.unpack(">HH", d[os2 + 74:os2 + 78]) if os2 else (0, 0)
-    if not asc:
-        hhea = tables[b"hhea"]
-        asc, desc = struct.unpack(">hh", d[hhea + 4:hhea + 8])
-        desc = -desc
-    return upem / (asc + desc)
-
-
-def fonts_view() -> list[dict]:
-    return [{"id": i, "label": label, "file": f, "em_scale": round(_em_scale(FONTS_DIR / f), 4)}
-            for i, label, f, _, _ in FONTS if (FONTS_DIR / f).exists()]
+FONTS_DIR = fb.BUNDLED_DIR
+BUNDLED_IDS = [f[0] for f in fb.BUNDLED]
 
 
 ANIMATIONS = {
@@ -118,9 +81,10 @@ PRESETS = [
 ]
 
 
-def clean_style(style: dict | None) -> dict:
+def clean_style(style: dict | None, font_ids: list[str] | None = None) -> dict:
+    """`font_ids`: the fonts that exist (bundled + the user's); default: the bundled ones."""
     s = {**STYLE_DEFAULTS, **{k: v for k, v in (style or {}).items() if k in STYLE_DEFAULTS}}
-    if s["font"] not in FONT_IDS:
+    if s["font"] not in (font_ids or BUNDLED_IDS):
         s["font"] = STYLE_DEFAULTS["font"]
     if s["animation"] not in ANIMATIONS:
         s["animation"] = STYLE_DEFAULTS["animation"]
@@ -300,10 +264,12 @@ def _esc(text: str) -> str:
 
 
 def ass(words: list[dict], style: dict, width: int, height: int, start: float = 0.0,
-        end: float | None = None) -> str:
-    """An ASS subtitle file for a video of width x height, for the part [start, end] of it."""
-    st = clean_style(style)
-    font = next(f for f in FONTS if f[0] == st["font"])
+        end: float | None = None, font: dict | None = None) -> str:
+    """An ASS subtitle file for a video of width x height, for the part [start, end] of it.
+    `font`: the font book entry for style["font"] (its full name is what libass matches)."""
+    st = clean_style(style, [font["id"]] if font else None)
+    if font is None:
+        font = next(f for f in fb.bundled_fonts() if f["id"] == st["font"])
     size = st["size"] / 100 * height
     outline = size * st["outline"] / 100
     shadow = size * st["shadow"] / 100
@@ -321,7 +287,7 @@ def ass(words: list[dict], style: dict, width: int, height: int, start: float = 
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, "
         "Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "
         "MarginL, MarginR, MarginV, Encoding",
-        f"Style: Cap,{font[3]},{size:.1f},{base},{base},{outline_col},{back_col},{-1 if font[4] else 0},0,0,0,"
+        f"Style: Cap,{font['ass_name']},{size:.1f},{base},{base},{outline_col},{back_col},0,0,0,0,"
         f"100,100,0,0,{border},{bord:.1f},{shadow:.1f},5,{int(width * 0.06)},{int(width * 0.06)},0,1",
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"])
     stop = end if end is not None else float("inf")
@@ -374,17 +340,17 @@ def filter_path(p: Path) -> str:
     return "'" + p.resolve().as_posix().replace(":", "\\:") + "'"
 
 
-def subtitles_filter(ass_file: Path) -> str:
-    return f"subtitles=filename={filter_path(ass_file)}:fontsdir={filter_path(FONTS_DIR)}"
+def subtitles_filter(ass_file: Path, fonts_dir: Path = FONTS_DIR) -> str:
+    return f"subtitles=filename={filter_path(ass_file)}:fontsdir={filter_path(fonts_dir)}"
 
 
 # ---------------------------------------------------------------- per-video state
 
-def state(plan: dict, duration: float | None) -> dict:
+def state(plan: dict, duration: float | None, font_ids: list[str] | None = None) -> dict:
     """The captions of a video: made from the script on first use, rebuilt (estimated) when the
     script changes; style and edits are kept otherwise."""
     cur = plan.get("captions") or {}
-    style = clean_style(cur.get("style") or PRESETS[0]["style"])
+    style = clean_style(cur.get("style") or PRESETS[0]["style"], font_ids)
     key = script_key(plan)
     if cur.get("script_key") == key and cur.get("words"):
         words, synced, diffs = cur["words"], cur.get("synced", "estimate"), cur.get("differences", [])

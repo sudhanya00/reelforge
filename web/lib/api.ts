@@ -442,6 +442,18 @@ export const api = {
   saveCaptions: (id: string, vid: string, b: Partial<Pick<CaptionState, "enabled" | "style" | "words">> & { reset?: boolean }) =>
     call<Video>("PUT", `/api/influencers/${id}/videos/${vid}/captions`, b),
   syncCaptions: (id: string, vid: string) => call<Job>("POST", `/api/influencers/${id}/videos/${vid}/captions/sync`),
+  uploadFont: async (filename: string, bytes: ArrayBuffer) => {
+    const res = await fetch(`${API}/api/captions/fonts/upload?filename=${encodeURIComponent(filename)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: bytes,
+    });
+    if (!res.ok) throw new ApiError((await res.json().catch(() => ({}))).detail ?? `${res.status}`);
+    return (await res.json()) as CaptionCatalog & { added: { id: string; label: string } };
+  },
+  importGoogleFont: (family: string, weight: number) =>
+    call<CaptionCatalog & { added: { id: string; label: string } }>("POST", "/api/captions/fonts/google", { family, weight }),
+  deleteFont: (id: string) => call<CaptionCatalog>("DELETE", `/api/captions/fonts/${id}`),
   saveCaptionPreset: (name: string, style: CaptionStyle) => call<CaptionCatalog>("POST", "/api/captions/presets", { name, style }),
   deleteCaptionPreset: (id: string) => call<CaptionCatalog>("DELETE", `/api/captions/presets/${id}`),
   createBucket: (name?: string) => call<AppState & { bucket: { name: string; created: boolean } }>("POST", "/api/settings/bucket", { name: name ?? null }),

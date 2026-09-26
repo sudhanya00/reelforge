@@ -714,7 +714,10 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
               onExport={exportEdit}
               captions={
                 caps && catalog
-                  ? { state: caps, catalog, onChange: changeCaps, onSync: syncCaps, syncing, onSavePreset: savePreset, onDeletePreset: deletePreset }
+                  ? {
+                      state: caps, catalog, onChange: changeCaps, onSync: syncCaps, syncing, onSavePreset: savePreset, onDeletePreset: deletePreset,
+                      onFontsChanged: (c: CaptionCatalog) => mutateCatalog(c, { revalidate: false }),
+                    }
                   : undefined
               }
             />

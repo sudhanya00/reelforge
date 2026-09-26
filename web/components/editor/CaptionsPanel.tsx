@@ -5,8 +5,10 @@ import { AudioLines, Bookmark, Check, Clock, TriangleAlert, X } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Input, Label, LiveBars, Segmented, Tip } from "@/components/ui/primitives";
 import { chunk, editChunk, type Animation, type CaptionCatalog, type CaptionState, type CaptionStyle } from "@/lib/captions";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { captionTextStyle } from "./CaptionOverlay";
+import { AddFont } from "./AddFont";
 
 const ANIM_SHORT: Record<Animation, string> = {
   none: "Static",
@@ -26,6 +28,7 @@ export const CaptionsPanel = React.memo(function CaptionsPanel({
   onSeek,
   onSavePreset,
   onDeletePreset,
+  onFontsChanged,
 }: {
   state: CaptionState;
   catalog: CaptionCatalog;
@@ -35,6 +38,7 @@ export const CaptionsPanel = React.memo(function CaptionsPanel({
   onSeek: (t: number) => void;
   onSavePreset: (name: string, style: CaptionStyle) => void;
   onDeletePreset: (id: string) => void;
+  onFontsChanged: (catalog: CaptionCatalog) => void;
 }) {
   const st = state.style;
   const set = (patch: Partial<CaptionStyle>) => onChange({ style: { ...st, ...patch } });
@@ -112,16 +116,35 @@ export const CaptionsPanel = React.memo(function CaptionsPanel({
             <Label>Font</Label>
             <div className="flex flex-wrap gap-1.5">
               {catalog.fonts.map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => set({ font: f.id })}
-                  className={cn("rounded-md border px-2 py-1 text-sm", st.font === f.id ? "border-foreground bg-accent" : "hover:border-foreground/40")}
-                  style={{ fontFamily: `"cap-${f.id}"` }}
-                  title={f.label}
-                >
-                  {f.label}
-                </button>
+                <span key={f.id} className="group relative">
+                  <button
+                    onClick={() => set({ font: f.id })}
+                    className={cn("rounded-md border px-2 py-1 text-sm", st.font === f.id ? "border-foreground bg-accent" : "hover:border-foreground/40")}
+                    style={{ fontFamily: `"cap-${f.id}"` }}
+                    title={f.user ? `${f.label} · ${f.source === "google" ? "from Google Fonts" : "uploaded"}${f.variable ? " · variable font: exports at its default weight" : ""}` : f.label}
+                  >
+                    {f.label}
+                  </button>
+                  {f.user && (
+                    <button
+                      onClick={async () => {
+                        onFontsChanged(await api.deleteFont(f.id));
+                        if (st.font === f.id) set({ font: catalog.defaults.font });
+                      }}
+                      className="absolute -top-1.5 -right-1.5 hidden rounded-full border bg-background p-0.5 group-hover:block"
+                      aria-label={`Remove ${f.label}`}
+                    >
+                      <X className="size-2.5" />
+                    </button>
+                  )}
+                </span>
               ))}
+              <AddFont
+                onAdded={(c, id) => {
+                  onFontsChanged(c);
+                  set({ font: id });
+                }}
+              />
             </div>
           </div>
           <div className="space-y-1.5">

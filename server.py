@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,6 +28,7 @@ import hashlib
 import re
 
 import captions as cap
+import fontbook as fb
 import director
 from providers import gcs
 import editor
@@ -1029,7 +1030,7 @@ def video_view(iid: str, proj: pl.Project, full: bool = False) -> dict:
                     "setup": infl.setup_of(plan, inf["profile"]),
                     "edit": edit_view(proj, lib_url),
                     "captions": cap.state(plan, pl.video_duration(proj.root / "final.mp4")
-                                          if (proj.root / "final.mp4").exists() else None),
+                                          if (proj.root / "final.mp4").exists() else None, font_book().ids()),
                     "opening": openings, "opening_ok": opening_ok,
                     "opening_error": item_errors(proj).get("opening"),
                     "estimate": infl.estimate_usd(current_settings(), plan, needs_opening=not opening_ok)})
@@ -1451,7 +1452,7 @@ def export_job(proj: pl.Project, project_key: str, claims: set[str], params: dic
         e = editor.clean(params, duration)
     except ValueError as err:
         raise HTTPException(400, str(err))
-    caps = cap.state(proj.load_plan(), duration) if with_captions else None
+    caps = cap.state(proj.load_plan(), duration, font_book().ids()) if with_captions else None
     burn = bool(caps and caps["enabled"] and caps["words"])
 
     def run(job: Job):
@@ -1459,10 +1460,15 @@ def export_job(proj: pl.Project, project_key: str, claims: set[str], params: dic
         subtitles = None
         if burn:
             w, h = video_size(final)
+            font = font_book().get(caps["style"]["font"])
+            fonts_dir = proj.root / "_fonts"                 # just the one font, bundled or imported
+            shutil.rmtree(fonts_dir, ignore_errors=True)
+            fonts_dir.mkdir()
+            shutil.copy2(font["path"], fonts_dir / font["path"].name)
             ass_file = proj.root / "captions.ass"
-            ass_file.write_text(cap.ass(caps["words"], caps["style"], w, h, e["start"], e["end"] or duration),
+            ass_file.write_text(cap.ass(caps["words"], caps["style"], w, h, e["start"], e["end"] or duration, font=font),
                                 encoding="utf-8")
-            subtitles = cap.subtitles_filter(ass_file)
+            subtitles = cap.subtitles_filter(ass_file, fonts_dir)
         if editor.is_identity(e) and not burn:
             edited.unlink(missing_ok=True)
             with plan_lock(proj.root.name):
@@ -1519,12 +1525,63 @@ def user_presets() -> list[dict]:
         return []
 
 
+def font_book() -> fb.FontBook:
+    return fb.FontBook(CONFIG["library"])
+
+
 @app.get("/api/captions")
 def captions_catalog():
-    return {"fonts": cap.fonts_view(), "animations": [{"id": k, "label": v} for k, v in cap.ANIMATIONS.items()],
+    ids = font_book().ids()
+    return {"fonts": font_book().view(), "animations": [{"id": k, "label": v} for k, v in cap.ANIMATIONS.items()],
             "defaults": cap.STYLE_DEFAULTS,
-            "presets": [{**p, "style": cap.clean_style(p["style"]), "builtin": True} for p in cap.PRESETS]
-                       + [{**p, "builtin": False} for p in user_presets()]}
+            "presets": [{**p, "style": cap.clean_style(p["style"], ids), "builtin": True} for p in cap.PRESETS]
+                       + [{**p, "style": cap.clean_style(p["style"], ids), "builtin": False} for p in user_presets()],
+            "popular": [{"family": f, "weight": w, "label": f"{f} {fb.WEIGHTS[w]}" if w != 400 else f}
+                        for f, w in fb.POPULAR]}
+
+
+@app.post("/api/captions/fonts/upload")
+async def upload_font(request: Request, filename: str = "font.ttf"):
+    """A .ttf/.otf, sent as the raw request body."""
+    data = await request.body()
+    try:
+        font = font_book().add(data, filename)
+    except fb.FontError as e:
+        raise HTTPException(400, str(e))
+    return {**captions_catalog(), "added": {k: v for k, v in font.items() if k != "path"}}
+
+
+@app.get("/api/captions/fonts/google")
+def search_google_fonts(q: str = ""):
+    try:
+        return {"results": font_book().search_google(q)}
+    except Exception as e:                           # noqa: BLE001 - offline, blocked, ...
+        raise HTTPException(502, f"Couldn't reach Google Fonts: {e}")
+
+
+class GoogleFontIn(BaseModel):
+    family: str
+    weight: int = 400
+
+
+@app.post("/api/captions/fonts/google")
+def import_google_font(body: GoogleFontIn):
+    if not body.family.strip():
+        raise HTTPException(400, "Which font?")
+    try:
+        font = font_book().add_google(body.family, body.weight)
+    except fb.FontError as e:
+        raise HTTPException(400, str(e))
+    return {**captions_catalog(), "added": {k: v for k, v in font.items() if k != "path"}}
+
+
+@app.delete("/api/captions/fonts/{fid}")
+def delete_font(fid: str):
+    try:
+        font_book().remove(fid)
+    except KeyError:
+        raise HTTPException(404, "No such font (bundled fonts can't be removed)")
+    return captions_catalog()
 
 
 class PresetIn(BaseModel):
@@ -1539,7 +1596,7 @@ def save_preset(body: PresetIn):
         raise HTTPException(400, "Name the preset")
     presets = [p for p in user_presets() if p["name"].lower() != name.lower()]
     pid = "user-" + (re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "preset")
-    presets.append({"id": pid, "name": name, "style": cap.clean_style(body.style)})
+    presets.append({"id": pid, "name": name, "style": cap.clean_style(body.style, font_book().ids())})
     presets_path().parent.mkdir(parents=True, exist_ok=True)
     presets_path().write_text(json.dumps(presets, indent=2), encoding="utf-8")
     return captions_catalog()
@@ -1568,14 +1625,15 @@ def put_captions(iid: str, vid: str, body: CaptionsIn):
     duration = pl.video_duration(final) if final.exists() else None
 
     def apply(plan):
-        st = cap.state(plan, duration)
+        ids = font_book().ids()
+        st = cap.state(plan, duration, ids)
         if body.reset:
             plan.pop("captions", None)
-            st = {**cap.state(plan, duration), "enabled": st["enabled"], "style": st["style"]}
+            st = {**cap.state(plan, duration, ids), "enabled": st["enabled"], "style": st["style"]}
         if body.enabled is not None:
             st["enabled"] = body.enabled
         if body.style is not None:
-            st["style"] = cap.clean_style(body.style)
+            st["style"] = cap.clean_style(body.style, ids)
         if body.words is not None:
             words = [{"text": str(w.get("text", "")).strip(), "start": w.get("start"), "end": w.get("end"),
                       "seg": int(w.get("seg", 0)), "br": bool(w.get("br", False))} for w in body.words]
@@ -1662,6 +1720,19 @@ class _LibraryFiles(StaticFiles):
 
 app.mount("/library-files", _LibraryFiles(), name="library-files")
 app.mount("/fonts", StaticFiles(directory=str(cap.FONTS_DIR), check_dir=False), name="fonts")
+
+
+class _UserFonts(StaticFiles):
+    def __init__(self):
+        super().__init__(directory=str(ROOT), check_dir=False)
+
+    def get_path(self, scope):                       # noqa: D401
+        self.directory = str(font_book().dir)
+        self.all_directories = [self.directory]
+        return super().get_path(scope)
+
+
+app.mount("/user-fonts", _UserFonts(), name="user-fonts")
 
 
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])

@@ -16,6 +16,7 @@ export interface CaptionsProps {
   syncing: boolean;
   onSavePreset: (name: string, style: CaptionStyle) => void;
   onDeletePreset: (id: string) => void;
+  onFontsChanged: (catalog: CaptionCatalog) => void;
 }
 import { EDIT_DEFAULTS, LOOKS, feMatrix, isIdentity, type ColorKey, type EditParams } from "@/lib/edit";
 import { cn, secs } from "@/lib/utils";

@@ -502,3 +502,40 @@ def test_captions_flow(api, fake, monkeypatch):
     assert not mine["builtin"] and mine["style"]["font"] == "bebas"
     assert api.delete("/api/captions/presets/bold-pop").status_code == 404
     assert api.delete(f"/api/captions/presets/{mine['id']}").status_code == 200
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_imported_fonts_for_captions(api, fake, monkeypatch):
+    import fontbook
+    anton = (fontbook.BUNDLED_DIR / "Anton-Regular.ttf").read_bytes()
+    r = api.post("/api/captions/fonts/upload?filename=Mine.ttf", content=anton,
+                 headers={"Content-Type": "application/octet-stream"})
+    assert r.status_code == 200 and r.json()["added"]["id"] == "user-anton-regular"
+    assert api.post("/api/captions/fonts/upload?filename=x.woff2", content=b"wOF2" + b"0" * 50).status_code == 400
+    cat = api.get("/api/captions").json()
+    mine = next(f for f in cat["fonts"] if f["id"] == "user-anton-regular")
+    assert mine["user"] and api.get(mine["url"]).status_code == 200
+    assert cat["popular"][0]["label"] == "Montserrat Black"
+
+    monkeypatch.setattr(fontbook, "FETCH", lambda url, headers: b"no ttf here")
+    assert api.post("/api/captions/fonts/google", json={"family": "Nope", "weight": 700}).status_code == 400
+
+    # a video whose captions use the uploaded font exports with it
+    iid = api.post("/api/influencers", json={"profile": {"name": "Ana"}}).json()["id"]
+    vid = wait(api, api.post(f"/api/influencers/{iid}/videos", json={"topic": "x", "length_s": 10}).json())["result"]["video"]
+    wait(api, api.post(f"/api/influencers/{iid}/identity", json={"views": ["face"]}).json())
+    wait(api, api.post(f"/api/influencers/{iid}/videos/{vid}/shoot").json())
+    v = api.put(f"/api/influencers/{iid}/videos/{vid}/captions",
+                json={"enabled": True, "style": {"font": "user-anton-regular"}}).json()
+    assert v["captions"]["style"]["font"] == "user-anton-regular"
+    j = wait(api, api.put(f"/api/influencers/{iid}/videos/{vid}/edit", json={"params": {}}).json())
+    assert j["status"] == "done", j
+    root = server.the_influencers().video(iid, vid).root
+    assert "Style: Cap,Anton Regular," in (root / "captions.ass").read_text(encoding="utf-8")
+    assert [p.name for p in (root / "_fonts").iterdir()] == ["user-anton-regular.ttf"]
+
+    # removing the font falls back to the default
+    assert api.delete("/api/captions/fonts/user-anton-regular").status_code == 200
+    v = api.get(f"/api/influencers/{iid}/videos/{vid}").json()
+    assert v["captions"]["style"]["font"] == "poppins-extrabold"
+    assert api.delete("/api/captions/fonts/anton").status_code == 404

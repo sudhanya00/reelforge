@@ -43,8 +43,11 @@ export interface CaptionState {
 export interface CaptionFont {
   id: string;
   label: string;
-  file: string;
+  url: string;
   em_scale: number;
+  user: boolean;
+  variable: boolean;
+  source: "bundled" | "upload" | "google";
 }
 
 export interface CaptionCatalog {
@@ -52,6 +55,7 @@ export interface CaptionCatalog {
   animations: { id: Animation; label: string }[];
   defaults: CaptionStyle;
   presets: { id: string; name: string; style: CaptionStyle; builtin: boolean }[];
+  popular: { family: string; weight: number; label: string }[];
 }
 
 export interface Chunk {
@@ -83,14 +87,17 @@ export function chunk(words: CaptionWord[], style: CaptionStyle): Chunk[] {
   });
 }
 
-/** Load the caption fonts once, as "cap-<id>" families. */
+/** Load the caption fonts (bundled and imported) as "cap-<id>" families; updates when fonts are added. */
 export function useCaptionFonts(fonts: CaptionFont[] | undefined) {
   useEffect(() => {
-    if (!fonts?.length || document.getElementById("caption-fonts")) return;
-    const el = document.createElement("style");
-    el.id = "caption-fonts";
-    el.textContent = fonts.map((f) => `@font-face{font-family:"cap-${f.id}";src:url("${API}/fonts/${f.file}");font-display:block}`).join("\n");
-    document.head.appendChild(el);
+    if (!fonts?.length) return;
+    let el = document.getElementById("caption-fonts") as HTMLStyleElement | null;
+    if (!el) {
+      el = document.createElement("style");
+      el.id = "caption-fonts";
+      document.head.appendChild(el);
+    }
+    el.textContent = fonts.map((f) => `@font-face{font-family:"cap-${f.id}";src:url("${API}${f.url}");font-display:block}`).join("\n");
   }, [fonts]);
 }
 

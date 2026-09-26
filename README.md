@@ -75,7 +75,9 @@ transcribed. Timing is estimated from the script, or **Sync to the voice** (≈$
 words to the audio without changing them, and flags where the delivery differs from the
 script. Pick a preset or set font, size, colours, outline, box, position, words per caption
 and animation (pop, fade, highlight the spoken word, word by word); save your own presets.
-Captions are burned in on export with bundled open-licence fonts (`fonts/`).
+Captions are burned in on export with bundled open-licence fonts (`fonts/`), plus any you add
+under Font → **Add font**: search Google Fonts (free, any weight), one-click popular caption fonts,
+or upload a .ttf/.otf. Added fonts live in `library/fonts/`.
 
 1080p is native (Omni renders it), not upscaled. On Vertex it's delivered through a Cloud
 Storage bucket: **Settings → Generation → Create bucket** once (private, in your project,
@@ -95,6 +97,7 @@ button that spends money, and asks before anything over $1.
     pipeline.py   all generation logic (no UI)
     influencers.py  influencer profiles, identity pack, scripts, extended reels
     captions.py   script-based captions: timing, grouping, styles, ASS for burn-in
+    fontbook.py   caption fonts: bundled, uploaded, imported from Google Fonts
     editor.py     trim, colour, audio (and captions) exported with ffmpeg
     server.py     local API + background jobs over pipeline.py; serves the UI
     web/          Next.js UI (exported to web/out, served by server.py)

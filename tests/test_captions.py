@@ -50,14 +50,14 @@ def test_clean_style_guards_everything():
     assert s["font"] == "poppins-extrabold" and s["color"] == "#FFFFFF" and s["size"] == 14
     assert s["words"] == 1 and s["animation"] == "pop" and "x" not in s
     assert {p["id"] for p in cap.PRESETS} >= {"bold-pop", "boxed", "one-word"}
-    assert all(cap.clean_style(p["style"])["font"] in cap.FONT_IDS for p in cap.PRESETS)
+    assert all(cap.clean_style(p["style"])["font"] in cap.BUNDLED_IDS for p in cap.PRESETS)
 
 
 def test_ass_highlights_the_spoken_word_and_respects_the_trim():
     words = cap.estimate_words(PLAN, 20.0)
     style = {"font": "kanit-bold", "animation": "highlight", "words": 3, "highlight": "#39E75F", "uppercase": True}
     a = cap.ass(words, style, 720, 1280)
-    assert "PlayResX: 720" in a and "Style: Cap,Kanit," in a and ",-1,0,0,0," in a       # bold Kanit
+    assert "PlayResX: 720" in a and "Style: Cap,Kanit Bold," in a                        # matched by full name
     lines = [l for l in a.splitlines() if l.startswith("Dialogue")]
     assert len(lines) == len(words)                  # one event per spoken word
     assert "{\\c&H005FE739}HEAR{\\c&H00FFFFFF" in a  # green, as ASS BGR
@@ -68,10 +68,12 @@ def test_ass_highlights_the_spoken_word_and_respects_the_trim():
     assert ",3," in [l for l in boxed.splitlines() if l.startswith("Style")][0] and "\\N" in boxed
 
 
-def test_fonts_have_metrics():
-    fonts = cap.fonts_view()
-    assert len(fonts) == len(cap.FONTS)
+def test_fonts_have_metrics(tmp_path):
+    import fontbook as fb
+    fonts = fb.FontBook(tmp_path).all()
+    assert len(fonts) == len(fb.BUNDLED)
     assert all(0.4 < f["em_scale"] < 1.2 for f in fonts)      # Poppins is ~0.57: tall win metrics
+    assert {f["id"]: f["ass_name"] for f in fonts}["kanit-bold"] == "Kanit Bold"
 
 
 def test_align_keeps_the_words_and_takes_only_times(tmp_path, s, monkeypatch):
