@@ -147,6 +147,8 @@ def main() -> None:
         server.enable_demo()
         # fake timings must never feed real progress estimates
         server.STATS_PATH = server.CONFIG["projects"] / "stats.json"
+        # nor should demo clicks change the real settings
+        server.PREFS_PATH = server.CONFIG["projects"] / "settings.json"
     server.mount_web()
     if not shutil.which("ffmpeg"):
         say("Note: ffmpeg not found — continuous scenes, posters and stitching need it.")

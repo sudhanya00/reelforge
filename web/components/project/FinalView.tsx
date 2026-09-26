@@ -1,11 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { Download, Film, FolderOpen, TriangleAlert } from "lucide-react";
+import { Download, Film, FolderOpen, SlidersHorizontal, TriangleAlert } from "lucide-react";
+import { toast } from "sonner";
+import { useSWRConfig } from "swr";
+import { EditDialog } from "@/components/editor/EditDialog";
+import { JobProgress } from "@/components/progress";
+import { useJobs } from "@/lib/hooks";
+import type { EditParams } from "@/lib/edit";
 import { Button } from "@/components/ui/button";
 import { LiveBars, Tip } from "@/components/ui/primitives";
 import { useRoute } from "@/components/shell";
-import { url, type Project } from "@/lib/api";
+import { api, url, type Project } from "@/lib/api";
 import { ago, cn, plural, secs, usd } from "@/lib/utils";
 import { useProjectActions } from "./actions";
 
@@ -15,6 +21,20 @@ export function FinalView({ p }: { p: Project }) {
   const stitching = p.busy.includes("stitch");
   const stale = !!p.final && p.scenes.some((s) => s.takes.find((t) => t.name === s.selected && t.created > (p.final?.updated ?? 0)));
   const unshot = p.scenes.filter((s) => !s.takes.length);
+  const { running } = useJobs();
+  const { mutate } = useSWRConfig();
+  const exporting = running.find((j) => j.project === p.id && j.kind === "export");
+  const [editing, setEditing] = React.useState(false);
+  const edited = p.edit?.url && !p.edit.stale ? p.edit.url : null;
+  const exportEdit = async (params: EditParams) => {
+    try {
+      await api.editFilm(p.id, params);
+      mutate("/api/jobs");
+    } catch (err) {
+      toast.error("Couldn't export", { description: (err as Error).message });
+      throw err;
+    }
+  };
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
@@ -22,8 +42,8 @@ export function FinalView({ p }: { p: Project }) {
         <div className="flex justify-center rounded-2xl border bg-card p-4">
           {p.final ? (
             <video
-              key={p.final.url}
-              src={url(p.final.url)}
+              key={edited ?? p.final.url}
+              src={url(edited ?? p.final.url)}
               poster={url(p.final.poster)}
               controls
               playsInline
@@ -45,11 +65,20 @@ export function FinalView({ p }: { p: Project }) {
 
         {p.final && (
           <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm" shape="pill">
-              <a href={url(p.final.url)} download={`${p.plan.title}.mp4`}>
+            <Button asChild size="sm" shape="pill">
+              <a href={url(edited ?? p.final.url)} download={`${p.plan.title}.mp4`}>
                 <Download />
-                Download
+                Download{edited ? " edited" : ""}
               </a>
+            </Button>
+            {edited && (
+              <Button asChild variant="ghost" size="sm" shape="pill">
+                <a href={url(p.final.url)} download={`${p.plan.title} (original).mp4`}>Original</a>
+              </Button>
+            )}
+            <Button variant="outline" size="sm" shape="pill" onClick={() => setEditing(true)} disabled={!!exporting || !p.edit}>
+              <SlidersHorizontal />
+              {p.edit?.url ? "Edit again" : "Edit"}
             </Button>
             <Button variant="ghost" size="sm" shape="pill" onClick={act.reveal}>
               <FolderOpen />
@@ -59,6 +88,19 @@ export function FinalView({ p }: { p: Project }) {
               {secs(p.final.duration_s)} · stitched {ago(p.final.updated)}
             </span>
           </div>
+        )}
+        {exporting && <JobProgress job={exporting} showLabel className="text-live" />}
+        {p.edit?.stale && <p className="text-xs text-live">Re-stitched since the last edit: export it again to apply it.</p>}
+        {p.final && p.edit?.duration_s && (
+          <EditDialog
+            open={editing}
+            onOpenChange={setEditing}
+            src={url(p.final.url)!}
+            vertical={vertical}
+            duration={p.edit.duration_s}
+            initial={p.edit.params}
+            onExport={exportEdit}
+          />
         )}
         {stale && (
           <p className="flex items-center gap-2 rounded-lg bg-live/10 px-3 py-2 text-sm">

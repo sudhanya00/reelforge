@@ -95,7 +95,7 @@ export function useJobWatcher(
         if (j.kind === "design") continue; // the designer shows its own result
         const iid = j.project!.slice(4);
         const tab = j.kind === "identity" || j.kind === "place" ? "identity" : "videos";
-        const video = j.kind === "script" ? (j.result?.video as string | undefined) : j.kind === "reel" || j.kind === "opening" ? j.claims[0] : undefined;
+        const video = j.kind === "script" ? (j.result?.video as string | undefined) : ["reel", "opening", "export"].includes(j.kind) ? j.claims[0] : undefined;
         if (j.status === "done") {
           toast.success(doneMessage(j), { action: { label: "Open", onClick: () => onOpenInfluencer(iid, tab, video) } });
         } else {
@@ -107,7 +107,7 @@ export function useJobWatcher(
       if (j.project) mutate(`/api/projects/${j.project}`);
       const project = j.project;
       if (j.status === "done") {
-        const tab = ({ assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan", direct: "plan" } as Partial<Record<Job["kind"], string>>)[j.kind];
+        const tab = ({ assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan", direct: "plan", export: "final" } as Partial<Record<Job["kind"], string>>)[j.kind];
         toast.success(doneMessage(j), {
           action: project ? { label: "Open", onClick: () => onOpen(project, tab) } : undefined,
         });
@@ -136,6 +136,7 @@ function doneMessage(j: Job) {
     case "reel": return j.label.replace("Shooting", "Finished shooting");
     case "place": return j.label.replace("Painting", "Painted");
     case "opening": return "The opening frame is ready";
+    case "export": return j.result?.edited === false ? "Edit removed" : "Edit exported: ready to download";
   }
 }
 

@@ -204,7 +204,12 @@ function Composer() {
               size="sm"
               value={s.resolution}
               onChange={setResolution}
-              options={(["360p", "720p"] as Resolution[]).map((r) => ({ value: r, label: r, title: r === "360p" ? "Cheap test quality" : "Film quality" }))}
+              options={(["360p", "720p", "1080p"] as Resolution[]).map((r) => ({
+                value: r,
+                label: r,
+                disabled: r === "1080p" && !s.high_res_ready,
+                title: r === "360p" ? "Cheap test quality" : r === "720p" ? "Film quality" : s.high_res_ready ? "Native 1080p" : "Needs a Cloud Storage bucket: Settings → Generation",
+              }))}
             />
           )}
           <div className="ml-auto flex items-center gap-2">

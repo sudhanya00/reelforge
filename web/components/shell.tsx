@@ -289,7 +289,7 @@ function JobsButton() {
   const { go, goInf } = useRoute();
   const open = (j: Job) => {
     if (j.project?.startsWith("inf:"))
-      goInf(j.project.slice(4), j.kind === "identity" || j.kind === "place" ? "identity" : "videos", j.kind === "reel" || j.kind === "opening" ? j.claims[0] : undefined);
+      goInf(j.project.slice(4), j.kind === "identity" || j.kind === "place" ? "identity" : "videos", ["reel", "opening", "export"].includes(j.kind) ? j.claims[0] : undefined);
     else if (j.project) go(j.project, tabFor(j));
   };
   return (
@@ -322,7 +322,7 @@ function JobsButton() {
 }
 
 const tabFor = (j: Job) =>
-  ({ assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan", direct: "plan" } as Partial<Record<Job["kind"], string>>)[j.kind];
+  ({ assets: "references", take: "scenes", edit: "scenes", review: "scenes", stitch: "final", produce: "final", film: "final", plan: "plan", direct: "plan", export: "final" } as Partial<Record<Job["kind"], string>>)[j.kind];
 
 function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
   const [open, setOpen] = React.useState(false);

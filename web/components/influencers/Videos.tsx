@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { motion, AnimatePresence } from "motion/react";
-import { Armchair, ArrowUp, Check, Copy, DoorOpen, Footprints, ImageIcon, Info, MapPin, Megaphone, Mic, Plus, RefreshCw, Shirt, Smartphone, Sparkles, Trash2, TriangleAlert, Video as VideoIcon, Wand2, X } from "lucide-react";
+import { Armchair, ArrowUp, Check, Copy, DoorOpen, Download, Footprints, SlidersHorizontal, ImageIcon, Info, MapPin, Megaphone, Mic, Plus, RefreshCw, Shirt, Smartphone, Sparkles, Trash2, TriangleAlert, Video as VideoIcon, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, InlineText, Input, Label, LiveBars, Segmented, Spinner, Textarea, Tip } from "@/components/ui/primitives";
 import { useConfirm, useConfirmSpend } from "@/components/confirm";
@@ -13,6 +13,7 @@ import { useRoute } from "@/components/shell";
 import { infKey, useAppState, useInfluencers, useJobs, useVideo } from "@/lib/hooks";
 import { api, url, type Format, type Influencer, type Job, type Resolution, type Segment, type Setup, type Video, type VideoSummary } from "@/lib/api";
 import { ago, cn, usd } from "@/lib/utils";
+import { EditDialog } from "@/components/editor/EditDialog";
 
 const LENGTHS = [10, 20, 30, 40] as const;
 
@@ -508,8 +509,23 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
   const { running } = useJobs();
   const hasFace = !!inf.face;
   const est = v.estimate;
-  const src = playing ?? v.final ?? v.turns.at(-1)?.url ?? null;
+  const src = playing ?? (v.edit?.url && !v.edit.stale ? v.edit.url : null) ?? v.final ?? v.turns.at(-1)?.url ?? null;
   const painting = running.find((j) => j.project === infKey(inf.id) && j.kind === "opening" && j.claims.includes(v.id));
+  const exporting = running.find((j) => j.project === infKey(inf.id) && j.kind === "export" && j.claims.includes(v.id));
+  const [editing, setEditing] = React.useState(false);
+  const edited = v.edit?.url && !v.edit.stale ? v.edit.url : null;
+  const fileName = `${(inf.profile.handle || inf.profile.name).replace(/^@/, "")} - ${v.title}`.replace(/[\\/:*?"<>|]/g, "");
+
+  const exportEdit = async (params: import("@/lib/edit").EditParams) => {
+    try {
+      await api.editVideo(inf.id, v.id, params);
+      mutate("/api/jobs");
+      setPlaying(null);
+    } catch (err) {
+      toast.error("Couldn't export", { description: (err as Error).message });
+      throw err;
+    }
+  };
 
   const paintOpening = async () => {
     if (dirty && !(await save())) return;
@@ -598,6 +614,44 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
         </p>
       )}
 
+      {v.final && !job && (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <Button variant="outline" shape="pill" size="sm" className="flex-1" onClick={() => setEditing(true)} disabled={!!exporting}>
+              <SlidersHorizontal />
+              {v.edit?.url ? "Edit again" : "Edit"}
+            </Button>
+            <Button asChild shape="pill" size="sm" className="flex-1">
+              <a href={url(edited ?? v.final)} download={`${fileName}.mp4`}>
+                <Download />
+                Download
+              </a>
+            </Button>
+          </div>
+          {exporting && <JobProgress job={exporting} showLabel className="text-live" />}
+          {edited && !exporting && (
+            <p className="text-center text-xs text-muted-foreground">
+              Downloads the edited version.{" "}
+              <a href={url(v.final)} download={`${fileName} (original).mp4`} className="underline underline-offset-2 hover:text-foreground">
+                Original
+              </a>
+            </p>
+          )}
+          {v.edit?.stale && <p className="text-center text-xs text-live">Reshot since the last edit: export it again to apply it.</p>}
+          {v.edit?.duration_s && (
+            <EditDialog
+              open={editing}
+              onOpenChange={setEditing}
+              src={url(v.final)!}
+              vertical
+              duration={v.edit.duration_s}
+              initial={v.edit.params}
+              onExport={exportEdit}
+            />
+          )}
+        </div>
+      )}
+
       {!job && (
         <Openings v={v} busy={!!painting} disabled={!hasFace} onPaint={paintOpening} />
       )}
@@ -609,9 +663,14 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
               <span>Quality</span>
               <Segmented<Resolution>
                 size="sm"
-                value={state.settings.resolution === "360p" ? "360p" : "720p"}
+                value={(["360p", "720p", "1080p"] as Resolution[]).includes(state.settings.resolution) ? state.settings.resolution : "720p"}
                 onChange={setResolution}
-                options={(["360p", "720p"] as Resolution[]).map((r) => ({ value: r, label: r, title: r === "360p" ? "Cheap test quality" : "Post quality" }))}
+                options={(["360p", "720p", "1080p"] as Resolution[]).map((r) => ({
+                  value: r,
+                  label: r,
+                  disabled: r === "1080p" && !state.settings.high_res_ready,
+                  title: r === "360p" ? "Cheap test quality" : r === "720p" ? "Post quality" : state.settings.high_res_ready ? "Native 1080p, about 1.5x the price of 720p" : "Needs a Cloud Storage bucket: Settings → Generation",
+                }))}
               />
             </div>
           )}
@@ -648,8 +707,9 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
               </Tip>
             )}
           </div>
+          {edited && <TakeRow label="Edited" active={!playing} onClick={() => setPlaying(null)} />}
           {v.final && (
-            <TakeRow label="Final video" active={!playing} onClick={() => setPlaying(null)} />
+            <TakeRow label="Final video" active={edited ? playing === v.final : !playing} onClick={() => setPlaying(edited ? v.final : null)} />
           )}
           {v.turns.map((t) => (
             <TakeRow key={t.name} label={`${t.segment ?? t.name} · ${t.extends ? "extension" : "first shot"}`} meta={`${t.duration_s?.toFixed(1) ?? "?"}s · ${usd(t.cost_usd)}`} active={playing === t.url} onClick={() => setPlaying(t.url)} />

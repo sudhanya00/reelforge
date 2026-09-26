@@ -97,12 +97,12 @@ export function SettingsDialog({ children }: { children: React.ReactNode }) {
                   onChange={(v) => save({ resolution: v })}
                   options={(["360p", "720p", "1080p", "4k"] as Resolution[]).map((r) => {
                     const def = providerInfo(s);
-                    const blocked = s.video_provider === "gemini-omni" && s.backend === "vertex" && (r === "1080p" || r === "4k");
+                    const blocked = s.video_provider === "gemini-omni" && !s.high_res_ready && (r === "1080p" || r === "4k");
                     const mapped = resolutionFor(def, r) !== r;
                     return {
                       value: r,
                       disabled: blocked,
-                      title: blocked ? "Needs Cloud Storage delivery on Vertex (not set up yet)" : undefined,
+                      title: blocked ? "Needs a Cloud Storage bucket (below)" : undefined,
                       label: (
                         <span className="flex flex-col items-center leading-tight">
                           <span>{r}</span>
@@ -116,6 +116,7 @@ export function SettingsDialog({ children }: { children: React.ReactNode }) {
                   className="[&>button]:h-11 [&>button]:px-4"
                 />
               </Field>
+              {s.backend === "vertex" && <BucketField s={s} />}
               <Field label="Reference image size" hint="1K and 2K cost the same">
                 <Segmented value={s.image_size} onChange={(v) => save({ image_size: v })} options={["1K", "2K", "4K"].map((v) => ({ value: v as Settings["image_size"], label: v }))} />
               </Field>
@@ -253,5 +254,38 @@ function ConnectionCheck() {
         </p>
       )}
     </div>
+  );
+}
+
+/** Vertex delivers Omni 1080p/4K through Cloud Storage; this sets up the bucket. */
+function BucketField({ s }: { s: Settings }) {
+  const { mutate } = useAppState();
+  const [busy, setBusy] = React.useState(false);
+  const create = async () => {
+    setBusy(true);
+    try {
+      const r = await api.createBucket();
+      mutate(r, { revalidate: false });
+      toast.success(r.bucket.created ? `Created gs://${r.bucket.name}` : `Using gs://${r.bucket.name}`, {
+        description: "1080p and 4K are available now. Videos pass through it and are deleted from it after download.",
+      });
+    } catch (e) {
+      toast.error("Couldn't set up the bucket", { description: (e as Error).message });
+    }
+    setBusy(false);
+  };
+  return (
+    <Field label="1080p and 4K delivery" hint="Vertex delivers them through Cloud Storage in your project">
+      {s.gcs_bucket ? (
+        <p className="text-sm">
+          <span className="font-mono text-xs">gs://{s.gcs_bucket}</span>
+          <span className="ml-2 text-xs text-muted-foreground">private · files kept at most a day</span>
+        </p>
+      ) : (
+        <Button size="sm" variant="outline" shape="pill" onClick={create} disabled={busy || !s.gcp_project}>
+          Create bucket {s.gcp_project ? `in ${s.gcp_project}` : ""}
+        </Button>
+      )}
+    </Field>
   );
 }

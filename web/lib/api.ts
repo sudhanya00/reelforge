@@ -1,4 +1,5 @@
 // Types + calls for server.py. Keep in sync with its *_view() functions.
+import type { EditParams } from "./edit";
 
 export const API = process.env.NEXT_PUBLIC_API ?? "";
 
@@ -38,6 +39,8 @@ export interface Settings extends Models {
   orientation: Orientation;
   video_provider: string;
   kling_audio: boolean;
+  gcs_bucket: string;
+  high_res_ready: boolean;
   providers: ProviderInfo[];
   default_models: Record<Backend, Models>;
   prices: { image: number; video_per_s: Record<Resolution, number> };
@@ -212,6 +215,7 @@ export interface Project {
   assets: Asset[];
   scenes: Scene[];
   final: { url: string; poster: string; duration_s: number | null; updated: number } | null;
+  edit: EditState | null;
   costs: Costs;
   busy: string[];
 }
@@ -219,7 +223,7 @@ export interface Project {
 export interface Job {
   id: string;
   kind: "plan" | "film" | "assets" | "take" | "edit" | "produce" | "stitch" | "review" | "direct"
-    | "design" | "identity" | "script" | "reel" | "place" | "opening";
+    | "design" | "identity" | "script" | "reel" | "place" | "opening" | "export";
   label: string;
   project: string | null;
   claims: string[];
@@ -302,6 +306,13 @@ export interface Turn {
   extends: string | null;
 }
 
+export interface EditState {
+  params: EditParams;
+  url: string | null;
+  stale: boolean;
+  duration_s: number | null;
+}
+
 export interface Setup {
   place: string;
   location: string;
@@ -335,6 +346,7 @@ export interface Video extends VideoSummary {
   error: string | null;
   costs: { usd: number; calls: number };
   setup: Setup;
+  edit: EditState | null;
   opening: { opening?: string | null; look?: string | null };
   opening_ok: boolean;
   opening_error: string | null;
@@ -423,5 +435,8 @@ export const api = {
   deletePlace: (id: string, pid: string) => call<{ ok: boolean }>("DELETE", `/api/influencers/${id}/places/${pid}`),
   shootVideo: (id: string, vid: string) => call<Job>("POST", `/api/influencers/${id}/videos/${vid}/shoot`),
   deleteVideo: (id: string, vid: string) => call<{ ok: boolean }>("DELETE", `/api/influencers/${id}/videos/${vid}`),
+  editVideo: (id: string, vid: string, params: EditParams) => call<Job>("PUT", `/api/influencers/${id}/videos/${vid}/edit`, { params }),
+  editFilm: (id: string, params: EditParams) => call<Job>("PUT", `/api/projects/${id}/edit`, { params }),
+  createBucket: (name?: string) => call<AppState & { bucket: { name: string; created: boolean } }>("POST", "/api/settings/bucket", { name: name ?? null }),
   deleteProject: (id: string) => call<{ ok: boolean; moved_to: string }>("DELETE", `/api/projects/${id}`),
 };
