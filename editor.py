@@ -86,7 +86,8 @@ def audio_filter(e: dict) -> str | None:
     return ",".join(parts) or None
 
 
-def command(src: Path, out: Path, e: dict) -> list[str]:
+def command(src: Path, out: Path, e: dict, subtitles: str | None = None) -> list[str]:
+    """`subtitles`: an ffmpeg subtitles filter (captions burned in after the colour)."""
     cmd = ["ffmpeg", "-y", "-loglevel", "error"]
     if e["start"]:
         cmd += ["-ss", f"{e['start']:.3f}"]
@@ -94,6 +95,8 @@ def command(src: Path, out: Path, e: dict) -> list[str]:
     if e["end"] is not None:
         cmd += ["-t", f"{e['end'] - e['start']:.3f}"]
     vf, af = video_filter(e), audio_filter(e)
+    if subtitles:
+        vf = f"{vf},{subtitles}" if vf else subtitles
     if vf:
         cmd += ["-vf", vf]
     cmd += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p"]
@@ -106,11 +109,12 @@ def command(src: Path, out: Path, e: dict) -> list[str]:
     return cmd + ["-movflags", "+faststart", str(out)]
 
 
-def render(src: Path, out: Path, params: dict, duration: float | None = None) -> dict:
-    """Export `src` with the edit to `out`. Returns the cleaned edit that was applied."""
+def render(src: Path, out: Path, params: dict, duration: float | None = None,
+           subtitles: str | None = None) -> dict:
+    """Export `src` with the edit (and burned-in captions) to `out`. Returns the cleaned edit."""
     e = clean(params, duration)
     tmp = out.with_name(out.stem + ".part.mp4")
-    r = subprocess.run(command(src, tmp, e), capture_output=True, text=True)
+    r = subprocess.run(command(src, tmp, e, subtitles), capture_output=True, text=True)
     if r.returncode != 0:
         tmp.unlink(missing_ok=True)
         raise RuntimeError(f"ffmpeg couldn't export the edit: {r.stderr.strip()[-300:]}")

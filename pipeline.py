@@ -183,7 +183,7 @@ def estimate_image_usd(s: Settings, n: int = 1) -> float:
     return round(n * per.get(s.image_size, 0), 2)
 
 
-COSTED_KINDS = ("plan", "image", "video", "video_edit", "video_unsaved", "review")
+COSTED_KINDS = ("plan", "image", "video", "video_edit", "video_unsaved", "review", "captions")
 
 
 def project_costs(proj: "Project") -> dict:

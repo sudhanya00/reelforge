@@ -95,7 +95,8 @@ export function useJobWatcher(
         if (j.kind === "design") continue; // the designer shows its own result
         const iid = j.project!.slice(4);
         const tab = j.kind === "identity" || j.kind === "place" ? "identity" : "videos";
-        const video = j.kind === "script" ? (j.result?.video as string | undefined) : ["reel", "opening", "export"].includes(j.kind) ? j.claims[0] : undefined;
+        if (j.kind === "sync" && j.status === "done") continue; // the editor shows it
+        const video = j.kind === "script" ? (j.result?.video as string | undefined) : ["reel", "opening", "export", "sync"].includes(j.kind) ? j.claims[0] : undefined;
         if (j.status === "done") {
           toast.success(doneMessage(j), { action: { label: "Open", onClick: () => onOpenInfluencer(iid, tab, video) } });
         } else {
@@ -136,6 +137,7 @@ function doneMessage(j: Job) {
     case "reel": return j.label.replace("Shooting", "Finished shooting");
     case "place": return j.label.replace("Painting", "Painted");
     case "opening": return "The opening frame is ready";
+    case "sync": return "Captions synced to the voice";
     case "export": return j.result?.edited === false ? "Edit removed" : "Edit exported: ready to download";
   }
 }

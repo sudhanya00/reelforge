@@ -457,3 +457,48 @@ def test_bucket_setup_enables_high_res(api):
     assert r["bucket"]["name"] == "my-proj-reelforge"
     st = api.get("/api/state").json()["settings"]
     assert st["gcs_bucket"] == "my-proj-reelforge" and st["high_res_ready"] is True
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_captions_flow(api, fake, monkeypatch):
+    import captions
+    monkeypatch.setattr(captions, "extract_audio", lambda v, out: (out.write_bytes(b"mp3"), out)[1])
+    iid = api.post("/api/influencers", json={"profile": {"name": "Ana"}}).json()["id"]
+    vid = wait(api, api.post(f"/api/influencers/{iid}/videos", json={"topic": "x", "length_s": 20}).json())["result"]["video"]
+    wait(api, api.post(f"/api/influencers/{iid}/identity", json={"views": ["face"]}).json())
+    wait(api, api.post(f"/api/influencers/{iid}/videos/{vid}/shoot").json())
+    c = api.get(f"/api/influencers/{iid}/videos/{vid}").json()["captions"]
+    script = "Okay so you only need three things. Banana, egg, oats. That's it."
+    assert " ".join(w["text"] for w in c["words"]) == script and not c["enabled"] and c["synced"] == "estimate"
+
+    cat = api.get("/api/captions").json()
+    assert len(cat["fonts"]) == 10 and any(p["id"] == "boxed" for p in cat["presets"])
+    assert api.get("/fonts/Anton-Regular.ttf").status_code == 200
+
+    v = api.put(f"/api/influencers/{iid}/videos/{vid}/captions",
+                json={"enabled": True, "style": {**cat["presets"][1]["style"], "color": "#FF0000"}}).json()
+    assert v["captions"]["enabled"] and v["captions"]["style"]["color"] == "#FF0000"
+
+    j = wait(api, api.post(f"/api/influencers/{iid}/videos/{vid}/captions/sync").json())
+    assert j["status"] == "done", j
+    c = api.get(f"/api/influencers/{iid}/videos/{vid}").json()["captions"]
+    assert c["synced"] == "voice" and c["differences"][0]["heard"] == "just"
+    assert " ".join(w["text"] for w in c["words"]) == script              # the words never change
+
+    words = c["words"]
+    words[0]["text"] = "OK"
+    c = api.put(f"/api/influencers/{iid}/videos/{vid}/captions", json={"words": words}).json()["captions"]
+    assert c["words"][0]["text"] == "OK" and c["synced"] == "voice"
+
+    j = wait(api, api.put(f"/api/influencers/{iid}/videos/{vid}/edit", json={"params": {}}).json())
+    assert j["status"] == "done" and j["result"]["edited"] is True       # captions alone are an edit
+    assert "Style: Cap," in (server.the_influencers().video(iid, vid).root / "captions.ass").read_text(encoding="utf-8")
+
+    c = api.put(f"/api/influencers/{iid}/videos/{vid}/captions", json={"reset": True}).json()["captions"]
+    assert c["words"][0]["text"] == "Okay" and c["synced"] == "estimate" and c["enabled"]
+
+    cat = api.post("/api/captions/presets", json={"name": "Mine", "style": {"font": "bebas"}}).json()
+    mine = next(p for p in cat["presets"] if p["name"] == "Mine")
+    assert not mine["builtin"] and mine["style"]["font"] == "bebas"
+    assert api.delete("/api/captions/presets/bold-pop").status_code == 404
+    assert api.delete(f"/api/captions/presets/{mine['id']}").status_code == 200

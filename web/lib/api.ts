@@ -1,4 +1,5 @@
 // Types + calls for server.py. Keep in sync with its *_view() functions.
+import type { CaptionCatalog, CaptionState, CaptionStyle } from "./captions";
 import type { EditParams } from "./edit";
 
 export const API = process.env.NEXT_PUBLIC_API ?? "";
@@ -223,7 +224,7 @@ export interface Project {
 export interface Job {
   id: string;
   kind: "plan" | "film" | "assets" | "take" | "edit" | "produce" | "stitch" | "review" | "direct"
-    | "design" | "identity" | "script" | "reel" | "place" | "opening" | "export";
+    | "design" | "identity" | "script" | "reel" | "place" | "opening" | "export" | "sync";
   label: string;
   project: string | null;
   claims: string[];
@@ -347,6 +348,7 @@ export interface Video extends VideoSummary {
   costs: { usd: number; calls: number };
   setup: Setup;
   edit: EditState | null;
+  captions: CaptionState;
   opening: { opening?: string | null; look?: string | null };
   opening_ok: boolean;
   opening_error: string | null;
@@ -437,6 +439,11 @@ export const api = {
   deleteVideo: (id: string, vid: string) => call<{ ok: boolean }>("DELETE", `/api/influencers/${id}/videos/${vid}`),
   editVideo: (id: string, vid: string, params: EditParams) => call<Job>("PUT", `/api/influencers/${id}/videos/${vid}/edit`, { params }),
   editFilm: (id: string, params: EditParams) => call<Job>("PUT", `/api/projects/${id}/edit`, { params }),
+  saveCaptions: (id: string, vid: string, b: Partial<Pick<CaptionState, "enabled" | "style" | "words">> & { reset?: boolean }) =>
+    call<Video>("PUT", `/api/influencers/${id}/videos/${vid}/captions`, b),
+  syncCaptions: (id: string, vid: string) => call<Job>("POST", `/api/influencers/${id}/videos/${vid}/captions/sync`),
+  saveCaptionPreset: (name: string, style: CaptionStyle) => call<CaptionCatalog>("POST", "/api/captions/presets", { name, style }),
+  deleteCaptionPreset: (id: string) => call<CaptionCatalog>("DELETE", `/api/captions/presets/${id}`),
   createBucket: (name?: string) => call<AppState & { bucket: { name: string; created: boolean } }>("POST", "/api/settings/bucket", { name: name ?? null }),
   deleteProject: (id: string) => call<{ ok: boolean; moved_to: string }>("DELETE", `/api/projects/${id}`),
 };

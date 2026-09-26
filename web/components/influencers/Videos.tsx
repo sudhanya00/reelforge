@@ -14,6 +14,9 @@ import { infKey, useAppState, useInfluencers, useJobs, useVideo } from "@/lib/ho
 import { api, url, type Format, type Influencer, type Job, type Resolution, type Segment, type Setup, type Video, type VideoSummary } from "@/lib/api";
 import { ago, cn, usd } from "@/lib/utils";
 import { EditDialog } from "@/components/editor/EditDialog";
+import useSWR from "swr";
+import { fetcher } from "@/lib/api";
+import type { CaptionCatalog, CaptionState, CaptionStyle } from "@/lib/captions";
 
 const LENGTHS = [10, 20, 30, 40] as const;
 
@@ -480,7 +483,7 @@ function Caption({ value, onChange }: { value: string; onChange: (c: string) => 
   return (
     <div className="rounded-xl border bg-card p-4">
       <div className="mb-1 flex items-center">
-        <Label>Caption</Label>
+        <Label>Post caption</Label>
         <Button variant="ghost" size="sm" shape="pill" className="-my-1 ml-auto h-7 text-xs" onClick={copy} disabled={!value}>
           {copied ? <Check className="text-ok" /> : <Copy />}
           {copied ? "Copied" : "Copy"}
@@ -516,7 +519,69 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
   const edited = v.edit?.url && !v.edit.stale ? v.edit.url : null;
   const fileName = `${(inf.profile.handle || inf.profile.name).replace(/^@/, "")} - ${v.title}`.replace(/[\\/:*?"<>|]/g, "");
 
+  // captions: a local draft, saved shortly after each change (and before exporting)
+  const { data: catalog, mutate: mutateCatalog } = useSWR<CaptionCatalog>("/api/captions", fetcher);
+  const [caps, setCaps] = React.useState<CaptionState | null>(null);
+  const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saving = React.useRef<Promise<unknown> | null>(null);
+  const pending = React.useRef<CaptionState | null>(null);
+  const syncing = running.some((j) => j.project === infKey(inf.id) && j.kind === "sync" && j.claims.includes(v.id));
+  const awaitingSync = React.useRef<number | null | false>(false);   // the synced_at before this sync
+
+  React.useEffect(() => {
+    if (editing) setCaps(v.captions);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+  React.useEffect(() => {
+    if (awaitingSync.current !== false && !syncing && v.captions.synced_at !== awaitingSync.current) {
+      awaitingSync.current = false;
+      setCaps((c) => (c ? { ...c, words: v.captions.words, synced: v.captions.synced, differences: v.captions.differences } : c));
+    }
+  }, [syncing, v.captions]);
+
+  const saveCaps = (c: CaptionState) => {
+    pending.current = null;
+    saving.current = api.saveCaptions(inf.id, v.id, { enabled: c.enabled, style: c.style, words: c.words }).catch((err) =>
+      toast.error("Couldn't save captions", { description: (err as Error).message }),
+    );
+    return saving.current;
+  };
+  const changeCaps = (patch: Partial<CaptionState>) =>
+    setCaps((c) => {
+      if (!c) return c;
+      const next = { ...c, ...patch };
+      pending.current = next;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => saveCaps(next), 400);
+      return next;
+    });
+  const flushCaps = async () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (pending.current) await saveCaps(pending.current);
+    else if (saving.current) await saving.current;
+  };
+  const syncCaps = async () => {
+    await flushCaps();
+    try {
+      await api.syncCaptions(inf.id, v.id);
+      awaitingSync.current = v.captions.synced_at;
+      mutate("/api/jobs");
+    } catch (err) {
+      toast.error("Couldn't sync", { description: (err as Error).message });
+    }
+  };
+  const savePreset = async (name: string, style: CaptionStyle) => {
+    try {
+      mutateCatalog(await api.saveCaptionPreset(name, style), { revalidate: false });
+      toast.success(`Saved "${name}"`, { description: "It's in the presets for every video now." });
+    } catch (err) {
+      toast.error("Couldn't save the preset", { description: (err as Error).message });
+    }
+  };
+  const deletePreset = async (id: string) => mutateCatalog(await api.deleteCaptionPreset(id), { revalidate: false });
+
   const exportEdit = async (params: import("@/lib/edit").EditParams) => {
+    await flushCaps();
     try {
       await api.editVideo(inf.id, v.id, params);
       mutate("/api/jobs");
@@ -647,6 +712,11 @@ function ShootPanel({ inf, v, job, dirty, save }: { inf: Influencer; v: Video; j
               duration={v.edit.duration_s}
               initial={v.edit.params}
               onExport={exportEdit}
+              captions={
+                caps && catalog
+                  ? { state: caps, catalog, onChange: changeCaps, onSync: syncCaps, syncing, onSavePreset: savePreset, onDeletePreset: deletePreset }
+                  : undefined
+              }
             />
           )}
         </div>

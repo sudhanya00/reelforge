@@ -1,9 +1,22 @@
 "use client";
 
 import * as React from "react";
-import { Pause, Play, RotateCcw, Scissors, SunMedium, Volume2 } from "lucide-react";
+import { Captions, Pause, Play, RotateCcw, Scissors, SlidersHorizontal, SunMedium, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle, Label } from "@/components/ui/primitives";
+import { Dialog, DialogContent, DialogDescription, DialogTitle, Label, Segmented } from "@/components/ui/primitives";
+import { useCaptionFonts, type CaptionCatalog, type CaptionState, type CaptionStyle } from "@/lib/captions";
+import { CaptionOverlay } from "./CaptionOverlay";
+import { CaptionsPanel } from "./CaptionsPanel";
+
+export interface CaptionsProps {
+  state: CaptionState;
+  catalog: CaptionCatalog;
+  onChange: (patch: Partial<CaptionState>) => void;
+  onSync: () => void;
+  syncing: boolean;
+  onSavePreset: (name: string, style: CaptionStyle) => void;
+  onDeletePreset: (id: string) => void;
+}
 import { EDIT_DEFAULTS, LOOKS, feMatrix, isIdentity, type ColorKey, type EditParams } from "@/lib/edit";
 import { cn, secs } from "@/lib/utils";
 
@@ -20,6 +33,7 @@ export function EditDialog({
   duration,
   initial,
   onExport,
+  captions,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -28,6 +42,7 @@ export function EditDialog({
   duration: number;
   initial: EditParams;
   onExport: (e: EditParams) => Promise<void>;
+  captions?: CaptionsProps;
 }) {
   const [e, setE] = React.useState<EditParams>(initial);
   const [t, setT] = React.useState(0);
@@ -38,6 +53,34 @@ export function EditDialog({
   const audio = React.useRef<{ ctx: AudioContext; gain: GainNode } | null>(null);
   const fid = React.useId().replace(/:/g, "");
   const end = e.end ?? duration;
+  const [tab, setTab] = React.useState<"edit" | "captions">("edit");
+  const [box, setBox] = React.useState({ w: 0, h: 0 });
+  useCaptionFonts(captions?.catalog.fonts);
+
+  // the rendered size of the video (captions scale with it); the dialog mounts it a render late
+  const [videoEl, setVideoEl] = React.useState<HTMLVideoElement | null>(null);
+  const videoRef = React.useCallback((el: HTMLVideoElement | null) => {
+    video.current = el;
+    setVideoEl(el);
+  }, []);
+  React.useEffect(() => {
+    if (!videoEl) return;
+    const ro = new ResizeObserver(() => setBox({ w: videoEl.clientWidth, h: videoEl.clientHeight }));
+    ro.observe(videoEl);
+    return () => ro.disconnect();
+  }, [videoEl]);
+
+  // word-accurate time while playing (timeupdate is only ~4 per second)
+  React.useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    const tick = () => {
+      if (video.current) setT(video.current.currentTime);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
 
   React.useEffect(() => {
     if (open) setE(initial);
@@ -82,10 +125,10 @@ export function EditDialog({
     setT(v.currentTime);
   };
 
-  const seek = (x: number) => {
+  const seek = React.useCallback((x: number) => {
     if (video.current) video.current.currentTime = x;
     setT(x);
-  };
+  }, []);
 
   const exportIt = async () => {
     setBusy(true);
@@ -117,8 +160,9 @@ export function EditDialog({
         <div className="grid max-h-[calc(100vh-2rem)] min-h-0 md:grid-cols-[1fr_340px]">
           <div className="flex min-h-0 flex-col gap-3 bg-black/90 p-4">
             <div className="flex min-h-0 flex-1 items-center justify-center">
+              <div className="relative">
               <video
-                ref={video}
+                ref={videoRef}
                 src={src}
                 playsInline
                 onTimeUpdate={onTime}
@@ -128,6 +172,10 @@ export function EditDialog({
                 className={cn("max-h-[62vh] rounded-lg bg-black", vertical ? "aspect-[9/16] h-[62vh]" : "aspect-video w-full")}
                 style={compare ? undefined : { filter: `url(#${fid})` }}
               />
+              {captions?.state.enabled && !compare && (
+                <CaptionOverlay words={captions.state.words} style={captions.state.style} fonts={captions.catalog.fonts} t={t} width={box.w} height={box.h} />
+              )}
+              </div>
             </div>
             <div className="flex items-center gap-3 text-white">
               <Button size="icon-sm" variant="secondary" shape="pill" onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}>
@@ -144,7 +192,24 @@ export function EditDialog({
             <div className="border-b px-5 pt-5 pb-4">
               <DialogTitle>Edit</DialogTitle>
               <DialogDescription className="mt-1">Exports a copy; the original stays as it is.</DialogDescription>
+              {captions && (
+                <Segmented<"edit" | "captions">
+                  size="sm"
+                  className="mt-3"
+                  value={tab}
+                  onChange={setTab}
+                  options={[
+                    { value: "edit", label: <><SlidersHorizontal />Trim, colour, audio</> },
+                    { value: "captions", label: <><Captions />Captions</> },
+                  ]}
+                />
+              )}
             </div>
+            {captions && tab === "captions" ? (
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 scrollbar-thin">
+                <CaptionsPanel {...captions} onSeek={seek} />
+              </div>
+            ) : (
             <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5 scrollbar-thin">
               <section className="space-y-2">
                 <h3 className="flex items-center gap-1.5 text-sm font-semibold">
@@ -208,13 +273,14 @@ export function EditDialog({
                 <Toggle label="Mute" hint="For adding music or a voice-over elsewhere" checked={e.mute} onChange={(v) => set({ mute: v })} />
               </section>
             </div>
+            )}
             <div className="flex items-center gap-2 border-t px-5 py-4">
               <Button variant="ghost" size="sm" shape="pill" onClick={() => setE(EDIT_DEFAULTS)} disabled={isIdentity(e)}>
                 <RotateCcw />
                 Reset
               </Button>
               <Button shape="pill" className="ml-auto" onClick={exportIt} disabled={busy}>
-                {isIdentity(e) && !isIdentity(initial) ? "Remove edit" : "Export"}
+                {isIdentity(e) && !isIdentity(initial) && !captions?.state.enabled ? "Remove edit" : captions?.state.enabled ? "Export with captions" : "Export"}
               </Button>
             </div>
           </div>

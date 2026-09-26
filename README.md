@@ -70,6 +70,13 @@ Finished films and videos have **Download** and **Edit**: trim, colour (looks, b
 contrast, saturation, warmth) and audio (volume, reduce noise, even out loudness, mute).
 Edits export a copy (`edited.mp4`); the original stays.
 
+**Captions** (influencer videos, in Edit → Captions) are your script's words, never
+transcribed. Timing is estimated from the script, or **Sync to the voice** (≈$0.02) times your
+words to the audio without changing them, and flags where the delivery differs from the
+script. Pick a preset or set font, size, colours, outline, box, position, words per caption
+and animation (pop, fade, highlight the spoken word, word by word); save your own presets.
+Captions are burned in on export with bundled open-licence fonts (`fonts/`).
+
 1080p is native (Omni renders it), not upscaled. On Vertex it's delivered through a Cloud
 Storage bucket: **Settings → Generation → Create bucket** once (private, in your project,
 files deleted after a day), then pick 1080p. It costs about 1.5x 720p.
@@ -87,6 +94,8 @@ button that spends money, and asks before anything over $1.
 ## Code
     pipeline.py   all generation logic (no UI)
     influencers.py  influencer profiles, identity pack, scripts, extended reels
+    captions.py   script-based captions: timing, grouping, styles, ASS for burn-in
+    editor.py     trim, colour, audio (and captions) exported with ffmpeg
     server.py     local API + background jobs over pipeline.py; serves the UI
     web/          Next.js UI (exported to web/out, served by server.py)
     launch.py     builds the UI when needed, starts the server, opens the browser

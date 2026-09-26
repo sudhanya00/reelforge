@@ -27,6 +27,7 @@ import hashlib
 
 import re
 
+import captions as cap
 import director
 from providers import gcs
 import editor
@@ -150,7 +151,7 @@ DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 1
                      "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360,
                      "video_veo-fast_720p": 60, "video_veo-fast_1080p": 90,
                      "video_veo_720p": 90, "video_veo_1080p": 120,
-                     "review": 40, "direct": 60, "design": 30, "script": 30, "export": 15}
+                     "review": 40, "direct": 60, "design": 30, "script": 30, "export": 15, "sync": 30}
 
 
 def video_key(provider: str, resolution: str) -> str:
@@ -1027,6 +1028,8 @@ def video_view(iid: str, proj: pl.Project, full: bool = False) -> dict:
                     "costs": pl.project_costs(proj),
                     "setup": infl.setup_of(plan, inf["profile"]),
                     "edit": edit_view(proj, lib_url),
+                    "captions": cap.state(plan, pl.video_duration(proj.root / "final.mp4")
+                                          if (proj.root / "final.mp4").exists() else None),
                     "opening": openings, "opening_ok": opening_ok,
                     "opening_error": item_errors(proj).get("opening"),
                     "estimate": infl.estimate_usd(current_settings(), plan, needs_opening=not opening_ok)})
@@ -1438,18 +1441,29 @@ class EditIn(BaseModel):
     params: dict
 
 
-def export_job(proj: pl.Project, project_key: str, claims: set[str], params: dict) -> dict:
+def export_job(proj: pl.Project, project_key: str, claims: set[str], params: dict,
+               with_captions: bool = False) -> dict:
     final = proj.root / "final.mp4"
     if not final.exists():
         raise HTTPException(400, "There's no finished video to edit yet")
+    duration = pl.video_duration(final)
     try:
-        e = editor.clean(params, pl.video_duration(final))
+        e = editor.clean(params, duration)
     except ValueError as err:
         raise HTTPException(400, str(err))
+    caps = cap.state(proj.load_plan(), duration) if with_captions else None
+    burn = bool(caps and caps["enabled"] and caps["words"])
 
     def run(job: Job):
         edited = proj.root / "edited.mp4"
-        if editor.is_identity(e):
+        subtitles = None
+        if burn:
+            w, h = video_size(final)
+            ass_file = proj.root / "captions.ass"
+            ass_file.write_text(cap.ass(caps["words"], caps["style"], w, h, e["start"], e["end"] or duration),
+                                encoding="utf-8")
+            subtitles = cap.subtitles_filter(ass_file)
+        if editor.is_identity(e) and not burn:
             edited.unlink(missing_ok=True)
             with plan_lock(proj.root.name):
                 plan = proj.load_plan()
@@ -1457,8 +1471,8 @@ def export_job(proj: pl.Project, project_key: str, claims: set[str], params: dic
                 proj.save_plan(plan)
             job.log("Edit cleared: the original is the video again")
             return {"edited": False}
-        job.step("export", "Exporting the edit")
-        editor.render(final, edited, e)
+        job.step("export", "Exporting the edit" + (" with captions" if burn else ""))
+        editor.render(final, edited, e, subtitles=subtitles)
         with plan_lock(proj.root.name):
             plan = proj.load_plan()
             plan["edit"] = e
@@ -1477,7 +1491,130 @@ def edit_film(pid: str, body: EditIn):
 @app.put("/api/influencers/{iid}/videos/{vid}/edit")
 def edit_video(iid: str, vid: str, body: EditIn):
     proj = open_video(iid, vid)
-    return export_job(proj, inf_key(iid), {vid}, body.params)
+    return export_job(proj, inf_key(iid), {vid}, body.params, with_captions=True)
+
+
+def video_size(path: Path) -> tuple[int, int]:
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                        "-of", "csv=p=0", str(path)], capture_output=True, text=True)
+    try:
+        w, h = (int(x) for x in r.stdout.strip().split(",")[:2])
+        return w, h
+    except ValueError:
+        return 720, 1280
+
+
+# --------------------------------------------------------------------------
+# API: captions (the script's words, burned in on export)
+# --------------------------------------------------------------------------
+
+def presets_path() -> Path:
+    return Path(CONFIG["library"]) / "caption_presets.json"
+
+
+def user_presets() -> list[dict]:
+    try:
+        return json.loads(presets_path().read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+@app.get("/api/captions")
+def captions_catalog():
+    return {"fonts": cap.fonts_view(), "animations": [{"id": k, "label": v} for k, v in cap.ANIMATIONS.items()],
+            "defaults": cap.STYLE_DEFAULTS,
+            "presets": [{**p, "style": cap.clean_style(p["style"]), "builtin": True} for p in cap.PRESETS]
+                       + [{**p, "builtin": False} for p in user_presets()]}
+
+
+class PresetIn(BaseModel):
+    name: str
+    style: dict
+
+
+@app.post("/api/captions/presets")
+def save_preset(body: PresetIn):
+    name = body.name.strip()[:40]
+    if not name:
+        raise HTTPException(400, "Name the preset")
+    presets = [p for p in user_presets() if p["name"].lower() != name.lower()]
+    pid = "user-" + (re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "preset")
+    presets.append({"id": pid, "name": name, "style": cap.clean_style(body.style)})
+    presets_path().parent.mkdir(parents=True, exist_ok=True)
+    presets_path().write_text(json.dumps(presets, indent=2), encoding="utf-8")
+    return captions_catalog()
+
+
+@app.delete("/api/captions/presets/{pid}")
+def delete_preset(pid: str):
+    presets = user_presets()
+    if pid not in {p["id"] for p in presets}:
+        raise HTTPException(404, "No such preset (built-in presets can't be deleted)")
+    presets_path().write_text(json.dumps([p for p in presets if p["id"] != pid], indent=2), encoding="utf-8")
+    return captions_catalog()
+
+
+class CaptionsIn(BaseModel):
+    enabled: bool | None = None
+    style: dict | None = None
+    words: list[dict] | None = None                  # edited text/timing
+    reset: bool = False                              # back to the script, estimated timing
+
+
+@app.put("/api/influencers/{iid}/videos/{vid}/captions")
+def put_captions(iid: str, vid: str, body: CaptionsIn):
+    proj = open_video(iid, vid)
+    final = proj.root / "final.mp4"
+    duration = pl.video_duration(final) if final.exists() else None
+
+    def apply(plan):
+        st = cap.state(plan, duration)
+        if body.reset:
+            plan.pop("captions", None)
+            st = {**cap.state(plan, duration), "enabled": st["enabled"], "style": st["style"]}
+        if body.enabled is not None:
+            st["enabled"] = body.enabled
+        if body.style is not None:
+            st["style"] = cap.clean_style(body.style)
+        if body.words is not None:
+            words = [{"text": str(w.get("text", "")).strip(), "start": w.get("start"), "end": w.get("end"),
+                      "seg": int(w.get("seg", 0)), "br": bool(w.get("br", False))} for w in body.words]
+            words = [w for w in words if w["text"]]
+            if not words:
+                raise HTTPException(400, "Captions need at least one word")
+            st["words"] = cap.fix_times(words, duration or max(w["end"] or 0 for w in words))
+        plan["captions"] = st
+
+    update_plan(proj, apply)
+    return video_view(iid, proj, full=True)
+
+
+@app.post("/api/influencers/{iid}/videos/{vid}/captions/sync")
+def sync_captions(iid: str, vid: str):
+    """Time the caption words to the voice. The words stay exactly as they are."""
+    proj = open_video(iid, vid)
+    final = proj.root / "final.mp4"
+    if not final.exists():
+        raise HTTPException(400, "Shoot the video first")
+    s = current_settings()
+
+    def run(job: Job):
+        job.step("sync", "Syncing captions to the voice")
+        duration = pl.video_duration(final)
+        st = cap.state(proj.load_plan(), duration)
+        words, diffs, usage = cap.align(client_for(s), s, final, st["words"], duration)
+        proj.log(kind="captions", model=s.planner_model, usage=usage, cost_usd=pl.call_cost(s.planner_model, usage))
+
+        def apply(plan):
+            cur = cap.state(plan, duration)
+            if cur["script_key"] != st["script_key"]:
+                raise RuntimeError("The script changed while syncing; sync again.")
+            plan["captions"] = {**cur, "words": words, "synced": "voice", "differences": diffs, "synced_at": time.time()}
+        update_plan(proj, apply)
+        job.log(f"Synced {len(words)} words" + (f"; {len(diffs)} places differ from the script" if diffs else ""))
+        return {"differences": len(diffs)}
+
+    return submit("sync", "Syncing captions", inf_key(iid), {vid}, run).view()
 
 
 @app.get("/api/jobs")
@@ -1524,6 +1661,7 @@ class _LibraryFiles(StaticFiles):
 
 
 app.mount("/library-files", _LibraryFiles(), name="library-files")
+app.mount("/fonts", StaticFiles(directory=str(cap.FONTS_DIR), check_dir=False), name="fonts")
 
 
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])

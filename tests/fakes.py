@@ -143,6 +143,11 @@ class FakeClient:
             return NS(candidates=[NS(content=NS(parts=[part]), finish_reason="STOP")],
                       usage_metadata=usage, text=None)
         system = config.system_instruction or ""
+        if "time a transcript against audio" in system:           # caption sync: even spacing
+            n = len([l for l in str(contents[-1]).split("WORDS:")[-1].splitlines() if l.strip()])
+            words = [{"i": i, "start": 0.4 + i * 0.35, "end": 0.7 + i * 0.35} for i in range(n)]
+            return NS(text=json.dumps({"words": words, "differences": [
+                {"at": 1.2, "expected": "only", "heard": "just"}]}), usage_metadata=usage)
         if "fictional social-media creators" in system:          # influencer designer
             return NS(text=json.dumps(FAKE_PROFILE), usage_metadata=usage)
         if "short-form video scripts" in system:                 # influencer script
