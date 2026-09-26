@@ -290,7 +290,7 @@ function JobsButton() {
   const open = (j: Job) => {
     if (j.project === "products") goInf(null);
     else if (j.project?.startsWith("inf:"))
-      goInf(j.project.slice(4), j.kind === "identity" || j.kind === "place" ? "identity" : "videos", ["reel", "opening", "export"].includes(j.kind) ? j.claims[0] : undefined);
+      goInf(j.project.slice(4), ["identity", "place", "casting"].includes(j.kind) ? "identity" : "videos", ["reel", "opening", "export"].includes(j.kind) ? j.claims[0] : undefined);
     else if (j.project) go(j.project, tabFor(j));
   };
   return (

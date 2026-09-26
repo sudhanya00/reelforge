@@ -15,6 +15,7 @@ import { api, url, type IdentityImage, type IdentityView, type Influencer } from
 import { cn, usd } from "@/lib/utils";
 import { Designer } from "./Designer";
 import { PlacesSection } from "./Places";
+import { Casting } from "./Casting";
 import { PhotoDrop, type Photo } from "./PhotoDrop";
 import { VideosTab } from "./Videos";
 
@@ -50,6 +51,8 @@ function IdentityTab({ inf }: { inf: Influencer }) {
   const [editing, setEditing] = React.useState(false);
   const job = useIdentityJob(inf.id);
   const missing = inf.identity.filter((v) => !v.image);
+  const stale = inf.identity.filter((v) => v.image && v.stale);
+  const todo = [...missing, ...stale];
   const hasFace = !!inf.identity.find((v) => v.view === "face")?.image;
   const p = inf.profile;
 
@@ -153,11 +156,15 @@ function IdentityTab({ inf }: { inf: Influencer }) {
             <div className="w-64">
               <JobProgress job={job} showLabel className="text-live" />
             </div>
-          ) : missing.length ? (
-            <Button shape="pill" onClick={() => paint()}>
+          ) : todo.length ? (
+            <Button shape="pill" onClick={() => (stale.length ? paint(todo.map((v) => v.view), true) : paint())}>
               <PaintBrush />
-              Paint {missing.length === inf.identity.length ? "the identity pack" : `${missing.length} missing`}
-              <span className="text-primary-foreground/70 tabular">{usd(imageUsd(state?.settings, missing.length))}</span>
+              {missing.length === inf.identity.length
+                ? "Paint the identity pack"
+                : stale.length && !missing.length
+                  ? `Update ${stale.length} to the new face`
+                  : `Paint ${todo.length} ${stale.length ? "missing or out of date" : "missing"}`}
+              <span className="text-primary-foreground/70 tabular">{usd(imageUsd(state?.settings, todo.length))}</span>
             </Button>
           ) : (
             <Button shape="pill" onClick={() => goInf(inf.id, "videos")}>
@@ -165,7 +172,7 @@ function IdentityTab({ inf }: { inf: Influencer }) {
             </Button>
           )}
         </div>
-        {inf.consent && <SourcePhotos inf={inf} />}
+        {inf.consent ? <SourcePhotos inf={inf} /> : <Casting inf={inf} />}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
           {inf.identity.map((v, i) => (
             <IdentityCard key={v.view} inf={inf} v={v} index={i} canPaint={!job && (!v.from_face || hasFace)} onRepaint={() => repaint(v.view)} onPaint={() => paint([v.view])} />
@@ -286,6 +293,7 @@ function IdentityCard({
           <p className="flex items-center gap-1.5 text-sm font-medium">
             {label}
             {v.overridden && <Badge tone="live">custom</Badge>}
+            {v.stale && <Badge tone="live">older face</Badge>}
           </p>
           <p className="text-xs leading-snug text-muted-foreground">{hint}</p>
         </div>

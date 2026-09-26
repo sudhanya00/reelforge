@@ -224,7 +224,7 @@ export interface Project {
 export interface Job {
   id: string;
   kind: "plan" | "film" | "assets" | "take" | "edit" | "produce" | "stitch" | "review" | "direct"
-    | "design" | "identity" | "script" | "reel" | "place" | "opening" | "export" | "sync" | "describe" | "product";
+    | "design" | "identity" | "script" | "reel" | "place" | "opening" | "export" | "sync" | "describe" | "product" | "casting";
   label: string;
   project: string | null;
   claims: string[];
@@ -274,6 +274,15 @@ export interface IdentityImage {
   error: string | null;
   prompt: string;
   overridden: boolean;
+  stale: boolean;
+}
+
+export interface CastingOption {
+  name: string;
+  url: string;
+  notes: string;
+  from: string | null;
+  created: number;
 }
 
 export interface Segment {
@@ -378,6 +387,7 @@ export interface Influencer extends InfluencerSummary {
   identity_usd: number;
   places: Place[];
   sources: { name: string; url: string }[];
+  casting: { candidates: CastingOption[]; locked: string | null; busy: boolean };
   consent: { text: string; at: number } | null;
   videos: VideoSummary[];
 }
@@ -442,6 +452,10 @@ export const api = {
     call<Job>("POST", "/api/influencers/design", { profile, concept }),
   createInfluencer: (profile: Partial<Profile>, sources: string[] = [], consent = "") =>
     call<Influencer>("POST", "/api/influencers", { profile, sources, consent }),
+  castFaces: (id: string, count: number, direction: string) => call<Job>("POST", `/api/influencers/${id}/casting`, { count, direction }),
+  refineFace: (id: string, name: string, notes: string) => call<Job>("POST", `/api/influencers/${id}/casting/${name}/refine`, { notes }),
+  lockFace: (id: string, name: string) => call<Influencer>("POST", `/api/influencers/${id}/casting/${name}/lock`),
+  deleteCandidate: (id: string, name: string) => call<Influencer>("DELETE", `/api/influencers/${id}/casting/${name}`),
   addSources: (id: string, tokens: string[]) => call<Influencer>("POST", `/api/influencers/${id}/sources`, { tokens }),
   deleteSource: (id: string, name: string) => call<Influencer>("DELETE", `/api/influencers/${id}/sources/${name}`),
   uploadImage: async (file: Blob) => {

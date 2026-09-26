@@ -649,6 +649,122 @@ def paint_identity(client, s: pl.Settings, lib: Influencers, iid: str, views: li
     return results
 
 
+# ---------------------------------------------------------------- casting
+
+# Each option is nudged to be its own person; all stay within the description.
+CAST_NOTES = [
+    "",
+    "A distinct individual: vary the face shape and jawline within the description.",
+    "A distinct individual: vary the eyes, brows and nose within the description.",
+    "A distinct individual: vary the lips, smile and cheekbones within the description.",
+    "A distinct individual: vary the proportions and overall impression within the description.",
+    "A distinct individual: a less conventional, more characterful face within the description.",
+]
+MAX_CANDIDATES = 24
+
+
+def casting_dir(lib: Influencers, iid: str) -> Path:
+    return lib.dir(iid) / "identity" / "casting"
+
+
+def casting_prompt(p: dict, k: int, direction: str = "") -> str:
+    base = identity_prompt(p, "face")
+    note = CAST_NOTES[k % len(CAST_NOTES)]
+    extra = f" Direction for this casting: {dot(direction)}" if direction.strip() else ""
+    return f"{base} {note}{extra}".strip()
+
+
+def refine_prompt(p: dict, notes: str) -> str:
+    _, _, _, framing = IDENTITY[0]
+    return (f"The same person as in the reference photo, with only these changes: {dot(notes)} Keep everything "
+            f"else about their face, hair, skin and features identical. {framing} {PHOTO_REALISM}")
+
+
+def _new_candidate(lib: Influencers, iid: str, entry: dict) -> dict:
+    inf = lib.get(iid)
+    cast = inf.setdefault("casting", {"candidates": [], "locked": None})
+    if len(cast["candidates"]) >= MAX_CANDIDATES:
+        raise ProviderError(400, f"Up to {MAX_CANDIDATES} options: delete some first.")
+    n = max((int(c["name"].split(".")[0]) for c in cast["candidates"]), default=0) + 1
+    return {"name": f"{n:02d}.png", "created": time.time(), **entry}
+
+
+def _add_candidate(lib: Influencers, iid: str, cand: dict) -> None:
+    inf = lib.get(iid)
+    inf.setdefault("casting", {"candidates": [], "locked": None})["candidates"].append(cand)
+    lib.save(inf)
+
+
+def cast_faces(client, s: pl.Settings, lib: Influencers, iid: str, count: int, direction: str = "",
+               on_progress=None) -> list[str]:
+    """Paint `count` face options from the profile. Returns the new candidate names."""
+    inf = lib.get(iid)
+    if lib.sources(iid):
+        raise ProviderError(400, "This character's face comes from their photos.")
+    p = inf["profile"]
+    casting_dir(lib, iid).mkdir(parents=True, exist_ok=True)
+    start = len(inf.get("casting", {}).get("candidates", []))
+    made = []
+    for i in range(count):
+        cand = _new_candidate(lib, iid, {"notes": direction.strip(), "from": None})
+        prompt = casting_prompt(p, start + i, direction)
+        _paint(client, s, lib, iid, prompt, casting_dir(lib, iid) / cand["name"], None, "3:4", f"casting:{cand['name']}")
+        _add_candidate(lib, iid, cand)
+        made.append(cand["name"])
+        on_progress and on_progress(cand["name"])
+    return made
+
+
+def refine_face(client, s: pl.Settings, lib: Influencers, iid: str, name: str, notes: str) -> str:
+    """A variation of one option with the user's notes; the original stays."""
+    src = casting_dir(lib, iid) / name
+    if not re.fullmatch(r"\d+\.png", name) or not src.exists():
+        raise KeyError(name)
+    if not notes.strip():
+        raise ValueError("Say what to change.")
+    cand = _new_candidate(lib, iid, {"notes": notes.strip(), "from": name})
+    _paint(client, s, lib, iid, refine_prompt(lib.get(iid)["profile"], notes), casting_dir(lib, iid) / cand["name"],
+           [src], "3:4", f"casting:{cand['name']}")
+    _add_candidate(lib, iid, cand)
+    return cand["name"]
+
+
+def lock_face(lib: Influencers, iid: str, name: str) -> None:
+    """Make an option their face. Views painted from an earlier face become out of date."""
+    src = casting_dir(lib, iid) / name
+    if not re.fullmatch(r"\d+\.png", name) or not src.exists():
+        raise KeyError(name)
+    shutil.copy2(src, lib.image(iid, "face"))
+    lib.image(iid, "face").touch()                     # newer than the views painted from the old face
+    inf = lib.get(iid)
+    inf.setdefault("casting", {"candidates": [], "locked": None})["locked"] = name
+    inf.get("identity_errors", {}).pop("face", None)
+    lib.save(inf)
+
+
+def remove_candidate(lib: Influencers, iid: str, name: str) -> None:
+    inf = lib.get(iid)
+    cast = inf.get("casting", {"candidates": [], "locked": None})
+    if name not in {c["name"] for c in cast["candidates"]}:
+        raise KeyError(name)
+    cast["candidates"] = [c for c in cast["candidates"] if c["name"] != name]
+    if cast.get("locked") == name:
+        cast["locked"] = None
+    inf["casting"] = cast
+    lib.save(inf)
+    (casting_dir(lib, iid) / name).unlink(missing_ok=True)
+
+
+def stale_views(lib: Influencers, iid: str) -> list[str]:
+    """Views painted from the face that are older than the current face."""
+    face = lib.image(iid, "face")
+    if not face.exists():
+        return []
+    t = face.stat().st_mtime
+    return [v for v, _, from_face, _ in IDENTITY
+            if from_face and lib.image(iid, v).exists() and lib.image(iid, v).stat().st_mtime < t]
+
+
 def paint_place(client, s: pl.Settings, lib: Influencers, iid: str, pid: str) -> None:
     place = lib.place(lib.get(iid), pid)
     if pid == "home":

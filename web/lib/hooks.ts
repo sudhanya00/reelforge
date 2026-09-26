@@ -120,7 +120,7 @@ export function useJobWatcher(
         mutate((key) => typeof key === "string" && key.startsWith("/api/influencers"));
         if (j.kind === "design") continue; // the designer shows its own result
         const iid = j.project!.slice(4);
-        const tab = j.kind === "identity" || j.kind === "place" ? "identity" : "videos";
+        const tab = ["identity", "place", "casting"].includes(j.kind) ? "identity" : "videos";
         if (j.kind === "sync" && j.status === "done") continue; // the editor shows it
         const video = j.kind === "script" ? (j.result?.video as string | undefined) : ["reel", "opening", "export", "sync"].includes(j.kind) ? j.claims[0] : undefined;
         if (j.status === "done") {
@@ -162,6 +162,7 @@ function doneMessage(j: Job) {
     case "script": return "The script is ready to edit";
     case "reel": return j.label.replace("Shooting", "Finished shooting");
     case "place": return j.label.replace("Painting", "Painted");
+    case "casting": return j.label.startsWith("Refining") ? "The variation is ready" : "New faces to choose from";
     case "opening": return "The opening frame is ready";
     case "sync": return "Captions synced to the voice";
     case "export": return j.result?.edited === false ? "Edit removed" : "Edit exported: ready to download";

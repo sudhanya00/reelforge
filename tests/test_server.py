@@ -618,3 +618,24 @@ def test_mood_board_reads_a_type_and_keeps_nothing(api, fake):
     inf = api.post("/api/influencers", json={"profile": {"name": "Bree", **f}}).json()
     assert inf["sources"] == [] and inf["consent"] is None
     assert api.post("/api/describe", json={"tokens": toks, "what": "celebrity"}).status_code == 400
+
+
+def test_casting_endpoints(api, fake):
+    iid = api.post("/api/influencers", json={"profile": {"name": "Bree", "hair": "honey-blonde waves"}}).json()["id"]
+    j = wait(api, api.post(f"/api/influencers/{iid}/casting", json={"count": 4, "direction": "bubbly"}).json())
+    assert j["status"] == "done", j
+    inf = api.get(f"/api/influencers/{iid}").json()
+    assert [c["name"] for c in inf["casting"]["candidates"]] == ["01.png", "02.png", "03.png", "04.png"]
+    assert api.get(inf["casting"]["candidates"][0]["url"]).status_code == 200
+    assert api.post(f"/api/influencers/{iid}/casting/02.png/refine", json={"notes": ""}).status_code == 400
+    j = wait(api, api.post(f"/api/influencers/{iid}/casting/02.png/refine", json={"notes": "bigger smile"}).json())
+    assert j["result"]["candidate"] == "05.png"
+    inf = api.post(f"/api/influencers/{iid}/casting/05.png/lock").json()
+    assert inf["casting"]["locked"] == "05.png" and inf["face"] and inf["identity"][0]["image"]
+    assert api.post(f"/api/influencers/{iid}/casting/99.png/lock").status_code == 404
+    inf = api.delete(f"/api/influencers/{iid}/casting/01.png").json()
+    assert len(inf["casting"]["candidates"]) == 4
+    # characters made from photos don't get casting
+    me = api.post("/api/influencers", json={"profile": {"name": "Me"}, "sources": [_upload(api)],
+                                            "consent": "These photos are of me."}).json()
+    assert api.post(f"/api/influencers/{me['id']}/casting", json={"count": 2}).status_code == 400

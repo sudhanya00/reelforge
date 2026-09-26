@@ -154,7 +154,7 @@ DEFAULT_TYPICAL_S = {"plan": 35, "image": 22, "video_360p": 140, "video_720p": 1
                      "video_kling_720p": 180, "video_kling_1080p": 240, "video_kling_4k": 360,
                      "video_veo-fast_720p": 60, "video_veo-fast_1080p": 90,
                      "video_veo_720p": 90, "video_veo_1080p": 120,
-                     "review": 40, "direct": 60, "design": 30, "script": 30, "export": 15, "sync": 30, "describe": 25}
+                     "review": 40, "direct": 60, "design": 30, "script": 30, "export": 15, "sync": 30, "describe": 25, "casting": 25}
 
 
 def video_key(provider: str, resolution: str) -> str:
@@ -1060,6 +1060,12 @@ def influencer_view(inf: dict, full: bool = False) -> dict:
         overrides = inf.get("prompt_overrides", {})
         sources = lib_.sources(iid)
         out["sources"] = [{"name": x.name, "url": lib_url(x)} for x in sources]
+        stale = infl.stale_views(lib_, iid)
+        cast = inf.get("casting", {"candidates": [], "locked": None})
+        cdir = infl.casting_dir(lib_, iid)
+        out["casting"] = {
+            "candidates": [{**c, "url": lib_url(cdir / c["name"])} for c in cast["candidates"] if (cdir / c["name"]).exists()],
+            "locked": cast.get("locked"), "busy": "casting" in busy}
         out["consent"] = inf.get("consent")
         out["identity"] = [{
             "view": v, "aspect": aspect, "from_face": from_face,
@@ -1068,6 +1074,7 @@ def influencer_view(inf: dict, full: bool = False) -> dict:
             "error": errors.get(v),
             "prompt": overrides.get(v) or infl.identity_prompt(inf["profile"], v, from_sources=bool(sources)),
             "overridden": v in overrides,
+            "stale": v in stale,
         } for v, aspect, from_face, _ in infl.IDENTITY]
         out["identity_usd"] = identity_usd
         out["places"] = [{
@@ -1455,6 +1462,78 @@ def delete_place(iid: str, pid: str):
     except KeyError:
         raise HTTPException(400 if pid == "home" else 404, "Home can't be removed" if pid == "home" else f"No place {pid}")
     return {"ok": True}
+
+
+class CastIn(BaseModel):
+    count: int = 4
+    direction: str = ""
+
+
+@app.post("/api/influencers/{iid}/casting")
+def cast_faces(iid: str, body: CastIn):
+    """Paint face options from the description to choose from."""
+    inf = open_influencer(iid)
+    if the_influencers().sources(iid):
+        raise HTTPException(400, "This character's face comes from their photos")
+    count = max(1, min(6, body.count))
+    s = current_settings()
+
+    def run(job: Job):
+        done = 0
+        job.step("image", f"Casting {count} faces", 0, count, record=False)
+
+        def progress(name):
+            nonlocal done
+            done += 1
+            job.step("image", f"Casting {count} faces", done, count, record=False)
+        names = infl.cast_faces(client_for(s), s, the_influencers(), iid, count, body.direction, on_progress=progress)
+        return {"candidates": names}
+
+    return submit("casting", f"Casting {inf['profile']['name']}", inf_key(iid), {"casting"}, run).view()
+
+
+class RefineIn(BaseModel):
+    notes: str
+
+
+@app.post("/api/influencers/{iid}/casting/{name}/refine")
+def refine_face(iid: str, name: str, body: RefineIn):
+    inf = open_influencer(iid)
+    if not body.notes.strip():
+        raise HTTPException(400, "Say what to change")
+    if not (infl.casting_dir(the_influencers(), iid) / name).exists():
+        raise HTTPException(404, "No such option")
+    s = current_settings()
+
+    def run(job: Job):
+        job.step("image", "Painting a variation", record=False)
+        return {"candidate": infl.refine_face(client_for(s), s, the_influencers(), iid, name, body.notes)}
+
+    return submit("casting", f"Refining {inf['profile']['name']}", inf_key(iid), {"casting"}, run).view()
+
+
+@app.post("/api/influencers/{iid}/casting/{name}/lock")
+def lock_face(iid: str, name: str):
+    open_influencer(iid)
+    if running_claims(inf_key(iid)) & {"face", "three_quarter", "profile", "full_body"}:
+        raise HTTPException(409, "The identity pack is being painted. Wait for it to finish.")
+    try:
+        with plan_lock(inf_key(iid)):
+            infl.lock_face(the_influencers(), iid, name)
+    except KeyError:
+        raise HTTPException(404, "No such option")
+    return influencer_view(open_influencer(iid), full=True)
+
+
+@app.delete("/api/influencers/{iid}/casting/{name}")
+def delete_candidate(iid: str, name: str):
+    open_influencer(iid)
+    try:
+        with plan_lock(inf_key(iid)):
+            infl.remove_candidate(the_influencers(), iid, name)
+    except KeyError:
+        raise HTTPException(404, "No such option")
+    return influencer_view(open_influencer(iid), full=True)
 
 
 @app.delete("/api/influencers/{iid}")

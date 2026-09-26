@@ -348,3 +348,38 @@ def test_look_text_skips_blank_fields():
     assert inf.look_text({"age": "", "ethnicity": "", "gender": "", "skin": "olive", "hair": "bob",
                           "body": "", "features": ""}) == "Skin: olive. Hair: bob."
     assert inf.look_text(FAKE_PROFILE).startswith("27-year-old Filipino woman. Skin:")
+
+
+# ---------------------------------------------------------------- casting
+
+def test_casting_options_refine_and_lock(client, s, lib, mira):
+    import os
+    names = inf.cast_faces(client, s, lib, mira, 3, direction="softer, girl-next-door")
+    assert names == ["01.png", "02.png", "03.png"]
+    prompts = [c[2][-1] for c in image_calls(client)]
+    assert len(set(prompts)) == 3                                        # each nudged to be its own person
+    assert all("girl-next-door" in x and "mole above the lip" in x for x in prompts)
+    assert all(len(c[2]) == 1 for c in image_calls(client))            # from words only
+
+    new = inf.refine_face(client, s, lib, mira, "02.png", "fuller lips, lighter brows")
+    last = image_calls(client)[-1]
+    assert new == "04.png" and len(last[2]) == 2 and "only these changes: fuller lips" in last[2][-1]
+    cast = lib.get(mira)["casting"]
+    assert [c["from"] for c in cast["candidates"]] == [None, None, None, "02.png"]
+
+    # views painted from an older face go out of date when a new face is locked
+    inf.paint_identity(client, s, lib, mira)
+    old = lib.image(mira, "profile").stat().st_mtime
+    os.utime(lib.image(mira, "profile"), (old - 60, old - 60))
+    inf.lock_face(lib, mira, "04.png")
+    assert lib.image(mira, "face").read_bytes() == (inf.casting_dir(lib, mira) / "04.png").read_bytes()
+    assert "profile" in inf.stale_views(lib, mira) and lib.get(mira)["casting"]["locked"] == "04.png"
+    inf.paint_identity(client, s, lib, mira, views=inf.stale_views(lib, mira), force=True)
+    assert inf.stale_views(lib, mira) == []
+
+    inf.remove_candidate(lib, mira, "04.png")
+    assert lib.get(mira)["casting"]["locked"] is None and not (inf.casting_dir(lib, mira) / "04.png").exists()
+    with pytest.raises(KeyError):
+        inf.lock_face(lib, mira, "../face.png")
+    with pytest.raises(ValueError):
+        inf.refine_face(client, s, lib, mira, "01.png", "  ")
