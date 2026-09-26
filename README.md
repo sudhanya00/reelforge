@@ -63,12 +63,12 @@ I ran controlled rounds (same scenes, two takes each, every take scored 1-5 by a
 | Round | Question | Result |
 |---|---|---|
 | Baseline | Where do takes fail? | Frozen starts, morphing on 3D motion toward camera, garbled text, and style words that turn into artefacts ("anamorphic" became a static lens flare) |
-| A/B 1 | Do timed beats and a director pass help? | Yes: mean 4.22 vs 3.85; physics 2.5 to 3.3; usable-or-fixable takes 1/6 to 3/6 |
-| A/B 2 | Fresh plans, cuts inside a clip | Cuts inside a clip made costumes drift (4.67 to 2.83); a close-up hand-off merged fingers into the envelope, so hand-offs are now implied across an edit |
+| A/B 1 | Do timed beats and a director pass help? | This round, yes: mean 4.22 vs 3.85, physics 2.5 to 3.3 |
+| A/B 2 | The same, with plans written from scratch | Reversed: 4.28 vs 3.75, so across both rounds a tie (4.07 vs 3.98). Cuts inside a clip made costumes drift (4.67 to 2.83), and a close-up hand-off merged fingers into the envelope; both are now staged differently |
 | Check | Did the fixes hold? | The targeted failures were gone, but objects "materialised" mid-shot, so now every object a character uses is visible from the first frame and positions are stated |
 | Models | Omni vs Veo 3.1 Fast at 720p | Omni 3.48 vs Veo 3.23: Veo holds faces slightly better but follows direction worse; 720p didn't fix morphing; wheels and hands fail in every model tried |
 
-The takeaway: prompt changes fix the failures they target, but current models have a floor on vehicles, hands and small objects. The better lever is staging around them, which is what the director does.
+The takeaway: the new planner didn't win on averages. Its changes fixed the failures they targeted and new ones took their place, and current models have a floor on vehicles, hands and small objects. What worked better was staging around those weaknesses, which is what the director now does.
 
 ## What it costs
 
