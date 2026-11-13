@@ -4,6 +4,29 @@ Idea in, film out. Gemini 3.1 Pro writes the production plan, Nano Banana Pro pa
 character / prop / location references, Gemini Omni Flash shoots each scene with those
 references attached, ffmpeg stitches the selected takes.
 
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-local%20API-009688?logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-Vertex%20AI-4285F4?logo=google&logoColor=white)
+![ffmpeg](https://img.shields.io/badge/ffmpeg-edit%20%26%20stitch-007808?logo=ffmpeg&logoColor=white)
+
+## Highlights
+
+- **A pipeline with checkpoints, not a one-shot prompt.** Plan, references,
+  scenes and final cut are separate steps you can review and redo, and any
+  run can be resumed where it stopped.
+- **Consistent characters.** Every scene is shot with the same painted
+  reference sheets attached, so people, props and places hold across takes.
+- **Pluggable video models.** Each model is a provider behind one interface
+  (prompt syntax, submit, collect, price); Gemini Omni and Kling ship today.
+- **Cost is a first-class feature.** Every call logs token usage and an
+  estimated cost, every button that spends money shows an estimate first,
+  and anything over $1 asks.
+- **Tested offline.** The test suite runs against a fake client, so nothing
+  is billed, and `--demo` runs the whole UI the same way.
+- **Stack:** Python pipeline and FastAPI server, Next.js UI exported as
+  static files and served locally, ffmpeg for editing, captions and stitching.
+
 ## Start it
 Double-click **`ReelForge.bat`**. It sets things up on first run, starts the app and opens
 your browser at http://localhost:8765. Close the console window to stop it.
